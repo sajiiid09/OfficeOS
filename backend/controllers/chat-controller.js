@@ -4,42 +4,38 @@ const User = require('../models/user-model');
 const Team = require('../models/team-model');
 const ErrorHandler = require('../utils/error-handler');
 const fileService = require('../services/file-service');
+const notificationService = require('../services/notification-service');
+const socketService = require('../services/socket-service');
 
 class ChatController {
   sendMessage = async (req, res, next) => {
-    const { receiverId, message } = req.body;
-    const file = req.file;
-    if (!receiverId) return next(ErrorHandler.badRequest('Receiver is required'));
-    if (!message && !file) return next(ErrorHandler.badRequest('Message or File is required'));
+    try {
+      const { receiverId, message } = req.body;
+      const file = req.file;
+      if (!receiverId) return next(ErrorHandler.badRequest('Receiver is required'));
+      if (!message && !file) return next(ErrorHandler.badRequest('Message or File is required'));
 
-    const chat = await Chat.create({
-      sender: req.user._id,
-      receiver: receiverId,
-      message,
-      file: file ? file.path : null
-    });
+      const chat = await Chat.create({
+        sender: req.user._id,
+        receiver: receiverId,
+        message,
+        file: file ? file.path : null
+      });
 
-    // Notify Receiver
-    const Notification = require('../models/notification-model');
-    await Notification.create({
-      title: 'New Message',
-      message: `You have a new message from ${req.user.name}`,
-      type: 'chat',
-      link: '/chat',
-      user: receiverId
-    });
-    // Emit Real-time Message to Receiver
-    const socketService = require('../services/socket-service');
-    socketService.emitToUser(receiverId, 'notification', {
-      title: 'New Message',
-      message: `You have a new message from ${req.user.name}`,
-      type: 'chat',
-      link: '/chat'
-    });
-    socketService.emitToUser(receiverId, 'message', chat);
-    socketService.emitToUser(receiverId, 'updateContacts', {});
+      await notificationService.notify(receiverId, {
+        title: 'New Message',
+        message: `You have a new message from ${req.user.name}`,
+        type: 'chat',
+        link: '/chat'
+      });
 
-    res.json({ success: true, data: chat });
+      socketService.emitToUser(receiverId, 'message', chat);
+      socketService.emitToUser(receiverId, 'updateContacts', {});
+
+      res.json({ success: true, data: chat });
+    } catch (error) {
+      next(error);
+    }
   }
 
   getMessages = async (req, res, next) => {
@@ -139,17 +135,15 @@ class ChatController {
     try {
       const { id } = req.params;
       const message = await Chat.findById(id);
+      if (!message) return next(ErrorHandler.notFound('Message not found'));
 
-      // Authorization: Only sender can delete (or Admin if needed later)
-      if (message.sender.toString() !== req.user._id.toString() && req.user.type !== 'admin') {
+      const isOwner = message.sender.toString() === req.user._id.toString();
+      const isAdmin = ['super_admin', 'sub_admin'].includes(req.user.type?.toLowerCase());
+      if (!isOwner && !isAdmin) {
         return next(ErrorHandler.unauthorized('You can only delete your own messages'));
       }
 
-      // --- FILE CLEANUP START ---
-      if (message.file) {
-        fileService.deleteChatFile(message.file);
-      }
-      // --- FILE CLEANUP END ---
+      if (message.file) fileService.deleteChatFile(message.file);
 
       await message.deleteOne();
       res.json({ success: true, message: 'Message deleted successfully' });

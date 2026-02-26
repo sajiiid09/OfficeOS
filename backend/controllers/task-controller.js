@@ -1,83 +1,46 @@
 const Task = require('../models/task-model');
 const User = require('../models/user-model');
-const Notification = require('../models/notification-model');
-const socketService = require('../services/socket-service');
+const Team = require('../models/team-model');
+const notificationService = require('../services/notification-service');
 const ErrorHandler = require('../utils/error-handler');
 const mongoose = require('mongoose');
-const path = require('path');
-const fs = require('fs');
 const PDFDocument = require('pdfkit');
-
-const logFile = path.join(__dirname, '../debug.log');
-const log = (msg) => {
-  const timestamp = new Date().toISOString();
-  fs.appendFileSync(logFile, `[${timestamp}] ${msg}\n`);
-  console.log(msg);
-};
 
 class TaskController {
   createTask = async (req, res, next) => {
-    log('=== TASK CREATE REQUEST ===');
-    const { description, assignedTo, startDate, endDate, title: bodyTitle } = req.body;
-    let title = bodyTitle;
-
-    if (!assignedTo || !mongoose.Types.ObjectId.isValid(assignedTo)) {
-      return next(ErrorHandler.badRequest('Please select a valid assignee'));
-    }
-
-    // If leader, verify assignedTo is in their team
-    if (req.user.type === 'leader') {
-      const Team = require('../models/team-model');
-      const team = await Team.findOne({ leader: req.user._id });
-      if (!team) return next(ErrorHandler.badRequest('You must be leading a team to assign tasks'));
-
-      const user = await User.findById(assignedTo);
-      const userTeams = Array.isArray(user?.team) ? user.team.map((id) => id.toString()) : [];
-      if (!user || !userTeams.includes(team._id.toString())) {
-        return next(ErrorHandler.unauthorized('You can only assign tasks to members of your own team'));
-      }
-    }
-
-    // Fallback for title
-    if (!title) {
-      try {
-        const user = await User.findById(assignedTo).populate('team');
-        if (user && user.team && user.team.name) {
-          title = user.team.name;
-        }
-      } catch (err) {
-        log('Error finding/populating user for fallback title: ' + err.message);
-      }
-    }
-
-    if (!title) {
-      return next(ErrorHandler.badRequest('Title is required'));
-    }
-
-    const file = req.file ? req.file.path : null;
-
     try {
+      const { description, assignedTo, startDate, endDate, title: bodyTitle } = req.body;
+      let title = bodyTitle;
+
+      if (!assignedTo || !mongoose.Types.ObjectId.isValid(assignedTo)) {
+        return next(ErrorHandler.badRequest('Please select a valid assignee'));
+      }
+
+      if (req.user.type === 'leader') {
+        const team = await Team.findOne({ leader: req.user._id });
+        if (!team) return next(ErrorHandler.badRequest('You must be leading a team to assign tasks'));
+
+        const user = await User.findById(assignedTo);
+        const userTeams = Array.isArray(user?.team) ? user.team.map(id => id.toString()) : [];
+        if (!user || !userTeams.includes(team._id.toString())) {
+          return next(ErrorHandler.unauthorized('You can only assign tasks to members of your own team'));
+        }
+      }
+
+      if (!title) {
+        const user = await User.findById(assignedTo).populate('team');
+        title = user?.team?.name || null;
+      }
+
+      if (!title) return next(ErrorHandler.badRequest('Title is required'));
+
       const task = await Task.create({
-        title,
-        description,
-        assignedTo,
-        startDate,
-        endDate,
-        file,
+        title, description, assignedTo, startDate, endDate,
+        file: req.file ? req.file.path : null,
         assignedBy: req.user._id
       });
 
-      // Notify Assigned User (DB)
-      await Notification.create({
-        title: 'New Mission Assigned',
-        message: `You have a new mission: ${title}`,
-        type: 'problem',
-        link: '/dashboardEmployee',
-        user: assignedTo
-      });
-
-      // Emit Real-time Notification
-      socketService.emitToUser(assignedTo, 'notification', {
+      await notificationService.notify(assignedTo, {
         title: 'New Mission Assigned',
         message: `You have a new mission: ${title}`,
         type: 'problem',
@@ -85,8 +48,8 @@ class TaskController {
       });
 
       res.status(201).json({ message: 'Task created successfully', task });
-    } catch (err) {
-      next(ErrorHandler.serverError('Failed to create task: ' + err.message));
+    } catch (error) {
+      next(error);
     }
   }
 
@@ -102,7 +65,6 @@ class TaskController {
   }
 
   getLeaderTasks = async (req, res, next) => {
-    const Team = require('../models/team-model');
     const team = await Team.findOne({ leader: req.user._id });
     if (!team) return res.json([]);
 

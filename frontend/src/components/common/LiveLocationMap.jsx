@@ -37,7 +37,6 @@ const LiveLocationMap = ({ userId, initialLat, initialLng }) => {
         const handleLocationUpdate = (data) => {
              // data: { userId, lat, long }
             if (String(data.userId) === String(userId)) {
-                console.log('Updating map position:', data.lat, data.long);
                 setPosition([data.lat, data.long]);
             }
         };

@@ -1,30 +1,20 @@
 const TeamDto = require('./team-dto');
-class UserDto {
-    id;
-    name;
-    email;
-    username;
-    mobile;
-    image;
-    type;
-    address;
-    status;
-    team;
-    constructor(user) {
-        this.id = user._id,
-            this.name = user.name,
-            this.username = user.username,
-            this.email = user.email,
-            this.mobile = user.mobile,
-            this.image = user.image && user.image !== 'user.png'
-                ? (user.image.startsWith('http') ? user.image : `${process.env.BASE_URL}/storage/images/profile/${user.image}`)
-                : '/assets/icons/user.png';
-        this.type = user.type && user.type.charAt(0).toUpperCase() + user.type.slice(1),
-            this.address = user.address,
-            this.status = user.status && user.status.charAt(0).toUpperCase() + user.status.slice(1),
-            this.team = user.team && user.team.name && new TeamDto(user.team);
-    }
 
+const capitalize = (str) => str ? str.charAt(0).toUpperCase() + str.slice(1) : '';
+
+class LeaderDto {
+    constructor(user) {
+        this.id = user._id;
+        this.name = user.name;
+        this.username = user.username;
+        this.email = user.email;
+        this.mobile = user.mobile;
+        this.image = user.image || 'user.png';
+        this.type = capitalize(user.type);
+        this.address = user.address;
+        this.status = capitalize(user.status);
+        this.team = user.team?.name ? new TeamDto(user.team) : null;
+    }
 }
 
-module.exports = UserDto;
+module.exports = LeaderDto;

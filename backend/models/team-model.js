@@ -2,12 +2,12 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 
-const teamScheam = new Schema({
+const teamSchema = new Schema({
 
     name: {
         type: String,
         unique: true,
-        require: true,
+        required: true,
         minlength: [3, 'Team name too short.'],
         maxlength: [20, "Team name too long"],
         trim: true
@@ -57,4 +57,4 @@ const teamScheam = new Schema({
     timestamps: true
 });
 
-module.exports = mongoose.model('Team', teamScheam, 'teams');
+module.exports = mongoose.model('Team', teamSchema, 'teams');

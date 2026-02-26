@@ -165,7 +165,6 @@ const Attendance = () => {
 
   const markAttendance = async () => {
     const location = await getLocation();
-    console.log('📍 Location captured:', location); // Debug log
     // Allow attendance even if location is null
     const res = await markEmployeeAttendance({ "employeeID": user.id, location });
     const { success } = res;

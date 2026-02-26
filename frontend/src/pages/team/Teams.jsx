@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useHistory } from "react-router-dom";
 import { exportToPrint } from "../../utils/printHelper";
 import { useDispatch } from "react-redux";
-import HeaderSection from "../../components/HeaderSection";
 import RowTeam from "../../components/rows/team-row";
 import { getTeams, deleteTeam } from "../../http";
 import { setTeam } from "../../store/team-slice";

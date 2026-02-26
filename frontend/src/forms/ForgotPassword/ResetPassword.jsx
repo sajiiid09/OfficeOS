@@ -3,7 +3,6 @@ import { useHistory } from "react-router";
 import { useSelector } from "react-redux";
 import {resetPassword} from "../../http/index";
 import { toast } from "react-toastify";
-import logo from "../../assets/icons/new-logo.png";
 
 const ResetPassword = () =>
 {
@@ -36,12 +35,10 @@ const ResetPassword = () =>
             const {email,otp,password} = formData;
             if(!email || !otp || !password) return toast.error('All Fields Required');
             const res = await resetPassword({email,otp,password});
-            console.log(res);
             res.success ? toast.success(res.message) : toast.error(res.message);
             if(res.success)
                 history.push('/login');
         } catch (error) {
-            console.warn(error);
             toast.error(error.response?.data?.message || error.message || "An error occurred");
         }
     }
@@ -52,7 +49,7 @@ const ResetPassword = () =>
                 <div className="row">
                 <div className="col-12 col-sm-8 offset-sm-2 col-md-6 offset-md-3 col-lg-6 offset-lg-3 col-xl-4 offset-xl-4">
                 <div className="login-brand">
-                  <img src={logo} alt="RACO EMS Logo" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
+                  <img src="/assets/icons/new-logo.png" alt="RACO EMS Logo" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
                 </div>
                     <div className="card card-primary">
                     <div className="card-header"><h4>Reset Password</h4></div>

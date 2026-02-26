@@ -3,114 +3,128 @@ const LeaveModel = require('../models/leave-model');
 const UserSalaryModel = require('../models/user-salary');
 const bcrypt = require('bcryptjs');
 
+const USER_POPULATE = ['team', 'empire'];
+
 class UserService {
-
-    UserModel = UserModel; // Expose UserModel for direct operations
-
-    createUser = async user => await UserModel.create(user);
-
-    updateUser = async (_id, user) => await UserModel.findByIdAndUpdate(_id, user, { new: true, runValidators: true });
-
-    findCount = async filter => await UserModel.find(filter).countDocuments();
-
-    findUser = async filter => await UserModel.findOne(filter).populate('empire');
-
-    findUsers = async filter => await UserModel.find(filter).populate('team').populate('empire');
-
-    verifyPassword = async (password, hashPassword) => await bcrypt.compare(password, hashPassword);
-
-    resetPassword = async (_id, password) => await UserModel.updateOne({ _id }, { password });
-
-    updatePassword = async (_id, password) => await UserModel.updateOne({ _id }, { password });
-
-    findLeaders = async (req, res, next) => await UserModel.aggregate([
-        { $match: { "type": 'leader' } },
-        {
-            $lookup:
-            {
-                from: "teams",
-                localField: "_id",
-                foreignField: "leader",
-                as: "team"
-            }
-        },
-        {
-            $lookup: {
-                from: "users",
-                localField: "team._id",
-                foreignField: "team",
-                as: "teamMembers"
-            }
-        },
-        {
-            $addFields: {
-                totalMembers: { $size: "$teamMembers" }
-            }
-        },
-        {
-            $project: {
-                teamMembers: 0
-            }
-        }
-    ])
-
-    findFreeLeaders = async (req, res, next) => await UserModel.aggregate([
-        { $match: { "type": 'leader' } },
-        {
-            $lookup:
-            {
-                from: "teams",
-                localField: "_id",
-                foreignField: "leader",
-                as: "team"
-            }
-        },
-        { $match: { "team": { $eq: [] } } }
-    ])
-
-    // Find all users by specific type
-    findUsersByType = async (type) => {
-        return await UserModel.find({ type: type.toLowerCase() }).populate('team').populate('empire');
+    // ── User CRUD ──────────────────────────────────────────────
+    async createUser(data) {
+        return UserModel.create(data);
     }
 
-    // Find all admins
-    findAdmins = async () => {
-        return await UserModel.find({ type: { $in: ['super_admin', 'sub_admin'] } }).populate('team').populate('empire');
+    async updateUser(id, data) {
+        return UserModel.findByIdAndUpdate(id, data, { new: true, runValidators: true });
     }
 
-    // Find all leaders
-    findAllLeaders = async () => {
-        return await UserModel.find({ type: 'leader' }).populate('team').populate('empire');
+    async deleteUser(id) {
+        return UserModel.findByIdAndDelete(id);
     }
 
-    // Find all employees
-    findAllEmployees = async () => {
-        return await UserModel.find({ type: 'employee' }).populate('team').populate('empire');
+    async findUser(filter) {
+        return UserModel.findOne(filter).populate('empire');
     }
 
-    createLeaveApplication = async data => LeaveModel.create(data);
+    async findUsers(filter) {
+        return UserModel.find(filter).populate(USER_POPULATE);
+    }
 
-    findLeaveApplication = async (data) => LeaveModel.findOne(data);
+    async findCount(filter) {
+        return UserModel.find(filter).countDocuments();
+    }
 
-    findAllLeaveApplications = async (data) => LeaveModel.find(data);
+    // ── Password ───────────────────────────────────────────────
+    async verifyPassword(plainText, hash) {
+        return bcrypt.compare(plainText, hash);
+    }
 
-    assignSalary = async (data) => UserSalaryModel.create(data);
+    async updatePassword(id, password) {
+        return UserModel.updateOne({ _id: id }, { password });
+    }
 
-    findSalary = async (data) => UserSalaryModel.findOne(data);
+    // ── Leaders ────────────────────────────────────────────────
+    async findLeadersWithMemberCount() {
+        return UserModel.aggregate([
+            { $match: { type: 'leader' } },
+            { $lookup: { from: 'teams', localField: '_id', foreignField: 'leader', as: 'team' } },
+            { $lookup: { from: 'users', localField: 'team._id', foreignField: 'team', as: 'teamMembers' } },
+            { $addFields: { totalMembers: { $size: '$teamMembers' } } },
+            { $project: { teamMembers: 0 } }
+        ]);
+    }
 
-    findAllSalary = async (data) => UserSalaryModel.find(data);
+    async findUnassignedLeaders() {
+        return UserModel.aggregate([
+            { $match: { type: 'leader' } },
+            { $lookup: { from: 'teams', localField: '_id', foreignField: 'leader', as: 'team' } },
+            { $match: { team: { $eq: [] } } }
+        ]);
+    }
 
-    updateSalary = async (data, updatedSalary) => UserSalaryModel.findOneAndUpdate(data, updatedSalary);
+    // ── Leave Applications ─────────────────────────────────────
+    async createLeaveApplication(data) {
+        return LeaveModel.create(data);
+    }
 
-    updateLeaveApplication = async (id, updatedLeave) => LeaveModel.findByIdAndUpdate(id, updatedLeave);
+    async findLeaveApplication(filter) {
+        return LeaveModel.findOne(filter);
+    }
 
-    deleteLeaveApplication = async (id) => await LeaveModel.findByIdAndDelete(id);
+    async findAllLeaveApplications(filter) {
+        return LeaveModel.find(filter);
+    }
 
-    deleteUser = async (_id) => await UserModel.findByIdAndDelete({ _id });
+    async updateLeaveApplication(id, data) {
+        return LeaveModel.findByIdAndUpdate(id, data);
+    }
 
-    deleteSalary = async (_id) => await UserSalaryModel.findByIdAndDelete({ _id });
+    async deleteLeaveApplication(id) {
+        return LeaveModel.findByIdAndDelete(id);
+    }
 
+    // ── Salary ─────────────────────────────────────────────────
+    async assignSalary(data) {
+        return UserSalaryModel.create(data);
+    }
+
+    async findSalary(filter) {
+        return UserSalaryModel.findOne(filter);
+    }
+
+    async findAllSalary(filter) {
+        return UserSalaryModel.find(filter);
+    }
+
+    async updateSalary(filter, data) {
+        return UserSalaryModel.findOneAndUpdate(filter, data);
+    }
+
+    async deleteSalary(id) {
+        return UserSalaryModel.findByIdAndDelete(id);
+    }
+
+    // ── Team membership helpers ───────────────────────────────────
+    async removeTeamFromUser(userId, teamId) {
+        return UserModel.updateOne({ _id: userId }, { $pull: { team: teamId } });
+    }
+
+    async removeTeamFromAllUsers(teamId) {
+        return UserModel.updateMany({ team: teamId }, { $pull: { team: teamId } });
+    }
+
+    async setTeamForUser(userId, teamId) {
+        return UserModel.updateOne({ _id: userId }, { $addToSet: { team: teamId } });
+    }
+
+    async searchUsers(query, selectFields = 'name type email') {
+        return UserModel.find(query).select(selectFields);
+    }
+
+    // ── Backward-compatibility aliases ────────────────────────────
+    async findLeaders() { return this.findLeadersWithMemberCount(); }
+    async findFreeLeaders() { return this.findUnassignedLeaders(); }
+    async findUsersByType(type) { return this.findUsers({ type: type.toLowerCase() }); }
+    async findAdmins() { return this.findUsers({ type: { $in: ['super_admin', 'sub_admin'] } }); }
+    async findAllLeaders() { return this.findUsers({ type: 'leader' }); }
+    async findAllEmployees() { return this.findUsers({ type: 'employee' }); }
 }
-
 
 module.exports = new UserService();

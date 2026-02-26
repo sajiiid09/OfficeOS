@@ -1,14 +1,15 @@
-import { createSlice } from "@reduxjs/toolkit";
+import { createSlice } from '@reduxjs/toolkit';
 
+/** @type {{ counts: { admin: number, team: number, leader: number, employee: number }, employees: Array|null }} */
 const initialState = {
-    counts:{
-        admin:0,
-        team:0,
-        leader:0,
-        employee:0
-    },
-    employees : null,
-}
+  counts: {
+    admin: 0,
+    team: 0,
+    leader: 0,
+    employee: 0,
+  },
+  employees: null,
+};
 
 export const mainSlice = createSlice({
     name:'mainSlice',

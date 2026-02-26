@@ -9,12 +9,17 @@ const mongoose = require('mongoose');
 class LeaderController {
 
     getTeamMembers = async (req, res, next) => {
-        const team = await teamService.findTeam({ leader: req.user._id });
-        if (!team) return res.json({ success: true, message: 'No team assigned', data: [] });
-        const members = await userService.findUsers({ team: team._id });
-        if (!members || members.length < 1) return res.json({ success: true, message: 'No members found', data: [] });
-        const data = members.map((o) => new UserDto(o));
-        res.json({ success: true, message: 'Members Found', data });
+        try {
+            const team = await teamService.findTeam({ leader: req.user._id });
+            if (!team) return res.json({ success: true, message: 'No team assigned', data: [] });
+
+            const members = await userService.findUsers({ team: team._id });
+            if (!members?.length) return res.json({ success: true, message: 'No members found', data: [] });
+
+            res.json({ success: true, message: 'Members Found', data: members.map(m => new UserDto(m)) });
+        } catch (error) {
+            next(error);
+        }
     }
 
     // Leaderboard endpoint used by frontend
@@ -90,10 +95,13 @@ class LeaderController {
     }
 
     getTeam = async (req, res, next) => {
-        const team = await teamService.findTeam({ leader: req.user._id });
-        if (!team) return res.json({ success: true, message: 'No team assigned', data: null });
-        const data = new TeamDto(team);
-        res.json({ success: true, message: 'Team Found', data });
+        try {
+            const team = await teamService.findTeam({ leader: req.user._id });
+            if (!team) return res.json({ success: true, message: 'No team assigned', data: null });
+            res.json({ success: true, message: 'Team Found', data: new TeamDto(team) });
+        } catch (error) {
+            next(error);
+        }
     }
 
     getDashboardStats = async (req, res, next) => {
@@ -102,25 +110,68 @@ class LeaderController {
             if (!team) {
                 return res.json({
                     success: true,
-                    data: {
-                        totalMembers: 0,
-                        totalProblems: 0
-                    }
+                    data: { totalMembers: 0, totalProblems: 0 }
                 });
             }
 
-            const membersCount = await userService.findCount({ team: team._id });
-            const problemsCount = await mongoose.model('Problem').countDocuments({
-                user: { $in: (await userService.findUsers({ team: team._id })).map(m => m._id) }
-            });
+            const members = await userService.findUsers({ team: team._id });
+            const [membersCount, problemsCount] = await Promise.all([
+                userService.findCount({ team: team._id }),
+                mongoose.model('Problem').countDocuments({
+                    user: { $in: members.map(m => m._id) }
+                })
+            ]);
 
             res.json({
                 success: true,
-                data: {
-                    totalMembers: membersCount,
-                    totalProblems: problemsCount
-                }
+                data: { totalMembers: membersCount, totalProblems: problemsCount }
             });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    updateTeamProgress = async (req, res, next) => {
+        try {
+            const { progress, progressNote } = req.body;
+            const team = await teamService.findTeam({ leader: req.user._id });
+            if (!team) return next(ErrorHandler.notFound('You are not leading any team'));
+
+            const p = Number(progress);
+            if (progress === undefined || progress === null) {
+                return next(ErrorHandler.badRequest('Progress value is required'));
+            }
+            if (Number.isNaN(p) || p < 0 || p > 100) {
+                return next(ErrorHandler.badRequest('Progress must be between 0 and 100'));
+            }
+
+            const update = { progress: p };
+            if (typeof progressNote === 'string') update.progressNote = progressNote;
+
+            const result = await teamService.updateTeam(team._id, update);
+            if (result.modifiedCount !== 1) {
+                return next(ErrorHandler.serverError('Failed to update team progress'));
+            }
+            res.json({ success: true, message: 'Team progress updated' });
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    updateMemberProgress = async (req, res, next) => {
+        try {
+            const { id } = req.params;
+            const team = await teamService.findTeam({ leader: req.user._id });
+            if (!team) return next(ErrorHandler.notFound('You are not leading any team'));
+
+            const member = await userService.findUser({ _id: id });
+            if (!member || !member.team?.some(t => t.toString() === team._id.toString())) {
+                return next(ErrorHandler.forbidden('You can only update progress for your own team members'));
+            }
+
+            // Delegate to userController's updateUserProgress
+            const userController = require('./user-controller');
+            return userController.updateUserProgress(req, res, next);
         } catch (error) {
             next(error);
         }

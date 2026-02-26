@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const asyncMiddleware = require('../middlewares/async-middleware');
 const userController = require('../controllers/user-controller');
-const upload = require('../middlewares/multer-cloudinary-config');
+const upload = require('../middlewares/multer-config');
 const { auth } = require('../middlewares/auth-middleware');
 
 router.post('/create', upload.single('image'), asyncMiddleware(userController.createUser));

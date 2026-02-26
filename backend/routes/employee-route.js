@@ -3,21 +3,24 @@ const asyncMiddleware = require('../middlewares/async-middleware');
 const teamController = require('../controllers/team-controller');
 const progressController = require('../controllers/progress-controller');
 const { auth } = require('../middlewares/auth-middleware');
-const upload = require('../middlewares/multer-cloudinary-config');
+const upload = require('../middlewares/multer-config');
 const userController = require('../controllers/user-controller');
+
+// All employee routes require authentication
+router.use(auth);
 
 /**
  * =====================
  * USER ROUTES
  * =====================
  */
-router.patch('/user', auth, upload.single('image'), asyncMiddleware(userController.updateUser));
+router.patch('/user', upload.single('image'), asyncMiddleware(userController.updateUser));
 
 // Attendance
 router.post('/attendance/mark', asyncMiddleware(userController.markEmployeeAttendance));
 router.post('/attendance/checkout', asyncMiddleware(userController.markEmployeeCheckOut));
 router.post('/attendance/view', asyncMiddleware(userController.viewEmployeeAttendance));
-router.get('/attendance/summary', auth, asyncMiddleware(userController.getAttendanceSummary));
+router.get('/attendance/summary', asyncMiddleware(userController.getAttendanceSummary));
 
 // Leave Applications
 router.post('/leave/apply', asyncMiddleware(userController.applyLeaveApplication));
@@ -40,6 +43,6 @@ router.get('/team/:id/members', asyncMiddleware(teamController.getTeamMembers));
  * =====================
  */
 router.post('/progress', asyncMiddleware(progressController.submitSelfProgress));
-router.get('/progress', auth, asyncMiddleware(progressController.getSelfProgress));
+router.get('/progress', asyncMiddleware(progressController.getSelfProgress));
 
 module.exports = router;

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getAttendance, getEmployees, getLeaders, editAttendance } from '../../../http';
 import { toast } from 'react-toastify';
-import HeaderSection from '../../../components/HeaderSection';
 import AttendanceSummaryCards from '../../../components/common/AttendanceSummaryCards';
 
 const AdminAttendanceManagement = () => {

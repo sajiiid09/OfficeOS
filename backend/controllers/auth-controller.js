@@ -9,58 +9,79 @@ const InvitationModel = require('../models/invitation-model');
 const UserDto = require('../dtos/user-dto');
 const { generateEmployeeId } = require('../utils/id-generator');
 
+// ── Cookie Configuration ───────────────────────────────────────
 const cookieSameSite = process.env.COOKIE_SAME_SITE || (process.env.NODE_ENV === 'production' ? 'none' : 'lax');
 const isSecureCookie = cookieSameSite === 'none' || process.env.NODE_ENV === 'production';
-const baseCookieOptions = {
-    httpOnly: true,
-    sameSite: cookieSameSite,
-    secure: isSecureCookie,
-    path: '/'
-};
-const authCookieMaxAge = 1000 * 60 * 60 * 24 * 30;
-const authCookieOptions = {
-    ...baseCookieOptions,
-    maxAge: authCookieMaxAge
+const baseCookieOptions = { httpOnly: true, sameSite: cookieSameSite, secure: isSecureCookie, path: '/' };
+
+const THIRTY_DAYS_MS = 1000 * 60 * 60 * 24 * 30;
+const OTP_COOLDOWN_MS = 60 * 1000;
+const authCookieOptions = { ...baseCookieOptions, maxAge: THIRTY_DAYS_MS };
+
+// ── Helpers ────────────────────────────────────────────────────
+const buildTokenPayload = (user) => ({
+    _id: user._id,
+    email: user.email,
+    username: user.username,
+    name: user.name,
+    type: user.type
+});
+
+const setAuthCookies = async (res, user) => {
+    const payload = buildTokenPayload(user);
+    const { accessToken, refreshToken } = tokenService.generateToken(payload);
+    await tokenService.storeRefreshToken(user._id, refreshToken);
+    res.cookie('accessToken', accessToken, authCookieOptions);
+    res.cookie('refreshToken', refreshToken, authCookieOptions);
+    return { accessToken, refreshToken };
 };
 
+const clearAuthCookies = (res) => {
+    res.clearCookie('refreshToken', baseCookieOptions);
+    res.clearCookie('accessToken', baseCookieOptions);
+};
+
+const checkOtpCooldown = async (userId, type) => {
+    const existingOtp = await otpService.getOtp(userId, type);
+    if (!existingOtp) return null;
+
+    const elapsed = Date.now() - new Date(existingOtp.createdAt).getTime();
+    if (elapsed < OTP_COOLDOWN_MS) {
+        const secondsLeft = Math.ceil((OTP_COOLDOWN_MS - elapsed) / 1000);
+        return `Please wait ${secondsLeft} seconds before requesting a new OTP.`;
+    }
+    return null;
+};
+
+const sendPasswordResetOtp = async (userId, name, email) => {
+    const type = process.env.TYPE_FORGOT_PASSWORD || 2;
+    await otpService.removeOtp(userId);
+    const otp = otpService.generateOtp();
+    await otpService.storeOtp(userId, otp, type);
+    await mailService.sendForgotPasswordMail(name, email, otp);
+};
+
+// ── Controller ─────────────────────────────────────────────────
 class AuthController {
 
-    // ==================== LOGIN ====================
     login = async (req, res, next) => {
         try {
             const { email, emailOrUsername, password } = req.body;
             const identifier = (emailOrUsername || email || '').trim();
 
-            if (!identifier || !password) {
-                return next(ErrorHandler.badRequest('Email and Password are required'));
-            }
+            if (!identifier || !password) return next(ErrorHandler.badRequest('Email and Password are required'));
 
-            let user;
-            if (validator.isEmail(identifier)) {
-                user = await userService.findUser({ email: identifier.toLowerCase() });
-            } else {
-                user = await userService.findUser({ username: identifier });
-            }
+            const user = validator.isEmail(identifier)
+                ? await userService.findUser({ email: identifier.toLowerCase() })
+                : await userService.findUser({ username: identifier });
 
             if (!user) return next(ErrorHandler.badRequest('Invalid Email or Username'));
-            if (user.status === 'banned') return next(ErrorHandler.badRequest('Your account has been banned, please contact admin'));
+            if (user.status === 'banned') return next(ErrorHandler.badRequest('Your account has been banned'));
 
             const isValid = await userService.verifyPassword(password, user.password);
             if (!isValid) return next(ErrorHandler.badRequest('Invalid Password'));
 
-            const payload = {
-                _id: user._id,
-                email: user.email,
-                username: user.username,
-                name: user.name,
-                type: user.type
-            };
-
-            const { accessToken, refreshToken } = tokenService.generateToken(payload);
-            await tokenService.storeRefreshToken(user._id, refreshToken);
-
-            res.cookie('accessToken', accessToken, authCookieOptions);
-            res.cookie('refreshToken', refreshToken, authCookieOptions);
+            await setAuthCookies(res, user);
 
             user.status = 'active';
             await user.save();
@@ -71,85 +92,46 @@ class AuthController {
         }
     }
 
-    // ==================== FORGOT PASSWORD ====================
-    forgot = async (req, res, next) => {
+    forgotPassword = async (req, res, next) => {
         try {
             const { email } = req.body;
             if (!email || !validator.isEmail(email)) return next(ErrorHandler.badRequest('Invalid Email Address'));
 
-            const emailNorm = email.toLowerCase();
-            const user = await userService.findUser({ email: emailNorm });
+            const user = await userService.findUser({ email: email.toLowerCase() });
             if (!user) return res.json({ success: false, message: 'No Account Found' });
 
             const type = process.env.TYPE_FORGOT_PASSWORD || 2;
+            const cooldownMessage = await checkOtpCooldown(user._id, type);
+            if (cooldownMessage) return res.json({ success: false, message: cooldownMessage });
 
-            // Check cooldown
-            const existingOtp = await otpService.getOtp(user._id, type);
-            const cooldownMs = 60 * 1000;
-            if (existingOtp) {
-                const timeSinceLastOtp = Date.now() - new Date(existingOtp.createdAt).getTime();
-                if (timeSinceLastOtp < cooldownMs) {
-                    const secondsLeft = Math.ceil((cooldownMs - timeSinceLastOtp) / 1000);
-                    return res.json({
-                        success: false,
-                        message: `Please wait ${secondsLeft} seconds before requesting a new OTP.`
-                    });
-                }
-            }
-
-            await otpService.removeOtp(user._id);
-            const otp = otpService.generateOtp();
-            await otpService.storeOtp(user._id, otp, type);
-            await mailService.sendForgotPasswordMail(user.name, user.email, otp);
-
+            await sendPasswordResetOtp(user._id, user.name, user.email);
             res.json({ success: true, message: 'OTP has been sent to your email address.' });
         } catch (error) {
             next(error);
         }
     }
 
-    // ==================== RESET PASSWORD ====================
-    reset = async (req, res, next) => {
+    resetPassword = async (req, res, next) => {
         try {
             const { email, otp, password } = req.body;
             if (!email || !otp || !password) return next(ErrorHandler.badRequest('Email, OTP, and Password are required'));
 
-            const emailNorm = email.toLowerCase();
-            const user = await userService.findUser({ email: emailNorm });
+            const user = await userService.findUser({ email: email.toLowerCase() });
             if (!user) return next(ErrorHandler.notFound('No Account Found'));
 
             const type = process.env.TYPE_FORGOT_PASSWORD || 2;
-            let response = await otpService.verifyOtp(user._id, otp, type);
+            const response = await otpService.verifyOtp(user._id, otp, type);
 
             if (response === 'INVALID') return next(ErrorHandler.badRequest('Invalid OTP'));
 
             if (response === 'EXPIRED') {
-                // Check cooldown before sending new OTP
-                const cooldownMs = 60 * 1000;
-                const existingOtp = await otpService.getOtp(user._id, type);
-                const timeSinceLastOtp = existingOtp ? Date.now() - new Date(existingOtp.createdAt).getTime() : cooldownMs + 1;
+                const cooldownMessage = await checkOtpCooldown(user._id, type);
+                if (cooldownMessage) return res.json({ success: false, message: `OTP expired. ${cooldownMessage}` });
 
-                if (timeSinceLastOtp < cooldownMs) {
-                    const secondsLeft = Math.ceil((cooldownMs - timeSinceLastOtp) / 1000);
-                    return res.json({
-                        success: false,
-                        message: `OTP expired. Please wait ${secondsLeft} seconds before requesting a new OTP.`
-                    });
-                }
-
-                // Generate new OTP
-                const newOtp = otpService.generateOtp();
-                await otpService.removeOtp(user._id);
-                await otpService.storeOtp(user._id, newOtp, type);
-                await mailService.sendForgotPasswordMail(user.name, user.email, newOtp);
-
-                return res.json({
-                    success: false,
-                    message: 'Your OTP has expired. A new OTP has been sent to your email address.'
-                });
+                await sendPasswordResetOtp(user._id, user.name, user.email);
+                return res.json({ success: false, message: 'Your OTP has expired. A new OTP has been sent to your email.' });
             }
 
-            // OTP valid → reset password
             const { modifiedCount } = await userService.updatePassword(user._id, password);
             if (modifiedCount !== 1) return next(ErrorHandler.serverError('Failed to reset your password'));
 
@@ -159,55 +141,48 @@ class AuthController {
         }
     }
 
-    // ==================== LOGOUT ====================
     logout = async (req, res, next) => {
         try {
             const { refreshToken } = req.cookies;
             const { _id } = req.user;
 
-            const response = await tokenService.removeRefreshToken(_id, refreshToken);
+            const { modifiedCount } = await tokenService.removeRefreshToken(_id, refreshToken);
             await userService.updateUser(_id, { status: 'deactive' });
 
-            res.clearCookie('refreshToken', baseCookieOptions);
-            res.clearCookie('accessToken', baseCookieOptions);
+            clearAuthCookies(res);
 
-            return (response.modifiedCount === 1)
+            return modifiedCount === 1
                 ? res.json({ success: true, message: 'Logout Successfully' })
-                : next(ErrorHandler.unAuthorized());
+                : next(ErrorHandler.unauthorized());
         } catch (error) {
             next(error);
         }
     }
 
-    // ==================== REFRESH TOKEN ====================
-    refresh = async (req, res, next) => {
+    refreshToken = async (req, res, next) => {
         try {
-            const { refreshToken: refreshTokenFromCookie } = req.cookies;
-            if (!refreshTokenFromCookie) return res.status(401).json({ success: false, message: 'Unauthorized Access' });
+            const { refreshToken: oldRefreshToken } = req.cookies;
+            if (!oldRefreshToken) return res.status(401).json({ success: false, message: 'Unauthorized Access' });
 
-            const userData = await tokenService.verifyRefreshToken(refreshTokenFromCookie);
-            const { _id, email, username } = userData;
+            const userData = await tokenService.verifyRefreshToken(oldRefreshToken);
+            const token = await tokenService.findRefreshToken(userData._id, oldRefreshToken);
 
-            const token = await tokenService.findRefreshToken(_id, refreshTokenFromCookie);
             if (!token) {
-                res.clearCookie('refreshToken', baseCookieOptions);
-                res.clearCookie('accessToken', baseCookieOptions);
+                clearAuthCookies(res);
                 return res.status(401).json({ success: false, message: 'Unauthorized Access' });
             }
 
-            const user = await userService.findUser({ email });
+            const user = await userService.findUser({ email: userData.email });
             if (!user) {
-                res.clearCookie('refreshToken', baseCookieOptions);
-                res.clearCookie('accessToken', baseCookieOptions);
+                clearAuthCookies(res);
                 return res.status(401).json({ success: false, message: 'User not found' });
             }
 
-            if (user.status === 'banned') return next(ErrorHandler.unAuthorized('Your account has been banned, please contact admin'));
+            if (user.status === 'banned') return next(ErrorHandler.unauthorized('Your account has been banned'));
 
-            const payload = { _id, email, username, name: user.name, type: user.type };
+            const payload = buildTokenPayload(user);
             const { accessToken, refreshToken } = tokenService.generateToken(payload);
-
-            await tokenService.updateRefreshToken(_id, refreshTokenFromCookie, refreshToken);
+            await tokenService.updateRefreshToken(user._id, oldRefreshToken, refreshToken);
 
             res.cookie('accessToken', accessToken, authCookieOptions);
             res.cookie('refreshToken', refreshToken, authCookieOptions);
@@ -221,7 +196,6 @@ class AuthController {
         }
     }
 
-    // ==================== REGISTER INVITED USER ====================
     registerInvited = async (req, res, next) => {
         try {
             const {

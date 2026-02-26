@@ -1,72 +1,37 @@
 const fs = require('fs');
 const path = require('path');
-const cloudinary = require('cloudinary').v2;
-
-// Cloudinary Configuration
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
 
 class FileService {
   constructor() {
-    this.basePath = path.join(__dirname, '../storage');
+    this.basePath = path.join(__dirname, '..', 'public', 'storage');
   }
 
+  /**
+   * Delete a file from local storage.
+   * @param {string} folder - Sub-folder (e.g. 'images/profile')
+   * @param {string} filename - Either a relative storage path or just the filename
+   * @returns {boolean}
+   */
+  static DEFAULT_IMAGES = ['user.png', 'team.png'];
+
   async deleteFile(folder, filename) {
-    if (!filename || filename === 'user.png' || filename === 'team.png') return;
+    if (!filename || FileService.DEFAULT_IMAGES.includes(filename)) return false;
+    if (filename.startsWith('http')) return false;
 
-    // 1. Check if it's a Cloudinary URL
-    if (filename.includes('cloudinary.com')) {
-      try {
-        // Extract public_id from URL
-        // Example: https://res.cloudinary.com/cloudname/image/upload/v12345/ems/profiles/profile-123.jpg
-        const parts = filename.split('/');
-        const uploadIndex = parts.indexOf('upload');
-        if (uploadIndex !== -1) {
-          // public_id starts after version (starts with 'v') or immediately after 'upload/'
-          let startIndex = uploadIndex + 1;
-          if (parts[startIndex].startsWith('v')) {
-            startIndex++;
-          }
-          // The rest is the public_id + extension
-          const publicIdWithExt = parts.slice(startIndex).join('/');
-          // Remove extension
-          const publicId = publicIdWithExt.split('.').slice(0, -1).join('.');
-
-          console.log(`Attempting to delete from Cloudinary: ${publicId}`);
-
-          // Determine resource type (auto-detect doesn't work well for destroy, default to 'image' or use folder names)
-          const resourceType = folder.includes('files') || folder.includes('tasks') || folder.includes('chat') ? 'raw' : 'image';
-
-          const result = await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
-
-          // If NOT deleted as image, try as raw (for PDFs/docs)
-          if (result.result !== 'ok' && resourceType === 'image') {
-            await cloudinary.uploader.destroy(publicId, { resource_type: 'raw' });
-          }
-
-          console.log(`Cloudinary deletion result for ${publicId}:`, result);
-          return result.result === 'ok';
-        }
-      } catch (error) {
-        console.error(`Error deleting Cloudinary file ${filename}:`, error.message);
-      }
-      return false;
+    // Try full relative storage path first (e.g. images/profile/xxx.jpg)
+    let filePath = path.join(this.basePath, filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return true;
     }
 
-    // 2. Legacy Local File Deletion
-    const filePath = path.join(this.basePath, folder, filename);
-    try {
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-        console.log(`Successfully deleted local file: ${filePath}`);
-        return true;
-      }
-    } catch (error) {
-      console.error(`Error deleting local file ${filePath}:`, error.message);
+    // Fallback: folder + basename (legacy paths)
+    filePath = path.join(this.basePath, folder, path.basename(filename));
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return true;
     }
+
     return false;
   }
 
@@ -80,6 +45,10 @@ class FileService {
 
   deleteTeamImage(filename) {
     return this.deleteFile('images/teams', filename);
+  }
+
+  deleteTaskFile(filename) {
+    return this.deleteFile('files/tasks', filename);
   }
 
   deleteChatFile(filename) {
@@ -105,8 +74,8 @@ class FileService {
             }
           }
         }
-      } catch (error) {
-        console.error(`Error deleting user's problem images for ${user._id}:`, error.message);
+      } catch (_error) {
+        // Silently continue — problem image cleanup is best-effort
       }
     }
   }

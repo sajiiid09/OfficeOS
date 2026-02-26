@@ -63,8 +63,6 @@ const LeaveView = () => {
       obj["appliedDate"] = appliedDate;
     }
 
-    console.log(obj);
-
     const res = await viewLeaves(obj);
     const { data } = res;
     setApplications(data);

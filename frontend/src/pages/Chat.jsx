@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import HeaderSection from '../components/HeaderSection';
-import { getContacts, getMessages, sendMessage, markMessagesAsRead, deleteMessage, deleteConversation, backendUrl } from '../http';
+import { getContacts, getMessages, sendMessage, markMessagesAsRead, deleteMessage, deleteConversation } from '../http';
 import { getFileUrl } from '../utils/fileUtil';
 import moment from 'moment';
 import { toast } from 'react-toastify';
@@ -35,7 +35,6 @@ const Chat = () => {
         const userId = user?.id || user?._id;
         if (userId) {
             const handleMessage = (msg) => {
-                console.log('New message received via socket:', msg);
                 if (activeContact && (String(msg.sender) === String(activeContact._id) || String(msg.receiver) === String(activeContact._id))) {
                     setMessages(prev => {
                         if (prev.find(m => m._id === msg._id)) return prev;

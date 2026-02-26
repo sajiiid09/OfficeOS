@@ -45,7 +45,6 @@ const SalaryView = () => {
 
     const inputEvent = (e) =>
     {
-      console.log(formData);
         const {name,value} = e.target;
         setFormData((old)=>
         {
