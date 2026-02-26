@@ -2,7 +2,7 @@ const router = require('express').Router();
 const taskController = require('../controllers/task-controller');
 const { auth, authRole } = require('../middlewares/auth-middleware');
 const asyncMiddleware = require('../middlewares/async-middleware');
-const upload = require('../middlewares/multer-cloudinary-config');
+const upload = require('../middlewares/multer-config');
 
 router.post('/admin', auth, authRole(['super_admin', 'sub_admin', 'leader']), upload.single('taskFile'), asyncMiddleware(taskController.createTask));
 router.get('/admin', auth, authRole(['super_admin', 'sub_admin']), asyncMiddleware(taskController.getAdminTasks));

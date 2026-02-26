@@ -3,21 +3,24 @@ const userController = require('../controllers/user-controller');
 const teamController = require('../controllers/team-controller');
 const holidayController = require('../controllers/holiday-controller');
 const progressController = require('../controllers/progress-controller');
-const upload = require('../middlewares/multer-cloudinary-config');
+const upload = require('../middlewares/multer-config');
 const asyncMiddleware = require('../middlewares/async-middleware');
 const { auth, authRole } = require('../middlewares/auth-middleware');
+
+// All admin routes require authentication and admin role
+router.use(auth, authRole(['super_admin', 'sub_admin']));
 
 router.post('/user', upload.single('image'), asyncMiddleware(userController.createUser));
 router.patch('/user/:id', upload.single('image'), asyncMiddleware(userController.updateUser));
 router.delete('/user/:id', asyncMiddleware(userController.deleteUser));
-router.get('/employees', asyncMiddleware(userController.getUsers));
+router.get('/employees', asyncMiddleware(userController.getEmployeeUsers));
 router.get('/employees/free', asyncMiddleware(userController.getFreeEmployees));
 router.get('/employee/:id', asyncMiddleware(userController.getUser));
 router.get('/user/:id', asyncMiddleware(userController.getUserNoFilter));
-router.get('/admins', asyncMiddleware(userController.getUsers));
+router.get('/admins', asyncMiddleware(userController.getAdminUsers));
 router.get('/admin/:id', asyncMiddleware(userController.getUser));
 router.get('/leaders/free', asyncMiddleware(userController.getFreeLeaders));
-router.get('/leaders', asyncMiddleware(userController.getLeaders));
+router.get('/leaders', asyncMiddleware(userController.getLeaderUsers));
 router.get('/leader/:id', asyncMiddleware(userController.getUser));
 router.post('/team', upload.single('image'), asyncMiddleware(teamController.createTeam));
 router.patch('/team/:id', upload.single('image'), asyncMiddleware(teamController.updateTeam));
@@ -28,8 +31,8 @@ router.delete('/team/:id', asyncMiddleware(teamController.deleteTeam));
 router.get('/team/:id/members', asyncMiddleware(teamController.getTeamMembers));
 router.patch('/team/member/add', asyncMiddleware(teamController.addMember));
 router.patch('/team/member/remove', asyncMiddleware(teamController.removeMember));
-router.patch('/team/leader/add', asyncMiddleware(teamController.addRemoveLeader));
-router.patch('/team/leader/remove', asyncMiddleware(teamController.addRemoveLeader));
+router.patch('/team/leader/add', asyncMiddleware(teamController.addLeader));
+router.patch('/team/leader/remove', asyncMiddleware(teamController.removeLeader));
 router.get('/counts', asyncMiddleware(teamController.getCounts));
 
 router.get('/users/by-type/:type', asyncMiddleware(userController.getUsersByType));
@@ -46,12 +49,12 @@ router.post('/update-leave/:id', asyncMiddleware(userController.updateLeaveAppli
 router.delete('/delete-leave/:id', asyncMiddleware(userController.deleteLeaveApplication));
 router.delete('/delete-salary/:id', asyncMiddleware(userController.deleteSalary));
 
-router.get('/attendance-summary/:userId', auth, authRole(['super_admin', 'sub_admin']), asyncMiddleware(userController.getAttendanceSummary));
+router.get('/attendance-summary/:userId', asyncMiddleware(userController.getAttendanceSummary));
 router.patch('/attendance/:id', asyncMiddleware(userController.editAttendance));
 router.patch('/user/:id/progress', asyncMiddleware(userController.updateUserProgress));
 router.post('/recalculate-salary/:userId', asyncMiddleware(userController.recalculateSalary));
 
-router.get('/progress', auth, authRole(['super_admin', 'sub_admin']), asyncMiddleware(progressController.getAllProgress));
+router.get('/progress', asyncMiddleware(progressController.getAllProgress));
 
 router.post('/holidays', asyncMiddleware(holidayController.createHoliday));
 router.get('/holidays', asyncMiddleware(holidayController.getHolidays));

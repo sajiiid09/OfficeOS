@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getUser, backendUrl } from "../../../http";
+import { getUser } from "../../../http";
 import HeaderSection from "../../../components/HeaderSection";
 import { getFileUrl } from "../../../utils/fileUtil";
 import { QRCodeSVG as QRCode } from 'qrcode.react';
@@ -372,17 +372,17 @@ const IdCard = () => {
                             
                             <div className="side-logo">
                                 <img
-                                    src="/RACOAI_LOGO.png"
-                                    alt="RACO Logo"
+                                    src="/assets/icons/new-logo.png"
+                                    alt="Company Logo"
                                 />
                             </div>
                             <div className="main-logo">
-                                <img src="/RACOlogo5.png"
-                                alt="RACO Logo" />
+                                <img src="/assets/icons/new-logo.png"
+                                alt="Company Logo" />
                             </div>
                             <div className="side-logo">
-                                <img src="/RACOAI_LOGO.png"
-                                alt="RACO Logo" />
+                                <img src="/assets/icons/new-logo.png"
+                                alt="Company Logo" />
                             </div>
 
                             {/*<div className="id-arrow">→</div>*/}
@@ -399,13 +399,13 @@ const IdCard = () => {
                         {/* BACK SIDE */}
                         <div className="premium-id-card">
                             <div className="main-logo">
-                                <img src="/RACOlogo5.png"
-                                alt="RACO Logo" />
+                                <img src="/assets/icons/new-logo.png"
+                                alt="Company Logo" />
                             </div>
                             <div className="side-logo">
                                 <img
-                                    src="/RACOAI_LOGO.png"
-                                    alt="RACO Logo"
+                                    src="/assets/icons/new-logo.png"
+                                    alt="Company Logo"
                                 />
                             </div>
 

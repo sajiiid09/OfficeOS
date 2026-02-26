@@ -4,7 +4,6 @@ import { doLogin } from "../http";
 import { useDispatch } from "react-redux";
 import {setAuth} from '../store/auth-slice';
 import { toast } from "react-toastify";
-import logo from "../assets/icons/new-logo.png";
 
 const LoginForm = () =>
 {  
@@ -65,7 +64,7 @@ const LoginForm = () =>
             <div className="row justify-content-center">
               <div className="col-12 col-sm-10 col-md-8 col-lg-6 col-xl-5">
                 <div className="text-center mb-5 mt-4">
-                  <img src={logo} alt="RACO EMS Logo" style={{ width: '72px', height: '72px', objectFit: 'contain', marginBottom: '12px' }} />
+                  <img src="/assets/icons/new-logo.png" alt="RACO EMS Logo" style={{ width: '72px', height: '72px', objectFit: 'contain', marginBottom: '12px' }} />
                   <h1 className="display-5 fw-bold gradient-text mb-2">RACO AI EMS</h1>
                   <p className="text-muted">Precision management for elite teams</p>
                 </div>

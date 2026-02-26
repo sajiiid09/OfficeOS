@@ -1,19 +1,24 @@
-module.exports = (err, req, res, next) => {
+module.exports = (err, req, res, _next) => {
+    let statusCode = err.statusCode || 500;
+    let message = err.message || 'Internal Server Error';
+
     if (err.name === 'ValidationError') {
-        const message = Object.values(err.errors).map(value => value.message).join(', ');
-        err = new Error(message); // Convert to simple Error object to use its message
-        err.statusCode = 400;
+        message = Object.values(err.errors).map(value => value.message).join(', ');
+        statusCode = 400;
     }
 
     if (err.name === 'MulterError') {
-        err.statusCode = 400;
+        statusCode = 400;
     }
 
-    if (!err.statusCode && err.message && err.message.toLowerCase().includes('invalid file type')) {
-        err.statusCode = 400;
+    if (statusCode === 500 && message.toLowerCase().includes('invalid file type')) {
+        statusCode = 400;
     }
 
-    err.statusCode = err.statusCode || 500;
-    err.message = err.message || "Internal Server Error"
-    res.status(err.statusCode).json({ success: false, message: err.message });
-}
+    if (statusCode >= 500) {
+        console.error(`[Error] ${req.method} ${req.originalUrl} - ${statusCode}: ${message}`);
+        if (err.stack) console.error(err.stack);
+    }
+
+    res.status(statusCode).json({ success: false, message });
+};

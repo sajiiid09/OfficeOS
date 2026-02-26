@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useParams, useHistory } from "react-router-dom";
 import { toast } from "react-toastify";
 import { verifyInvitation, registerInvited } from "../../http";
-import logo from "../../assets/icons/new-logo.png";
 
 const RegisterInvited = () => {
     const { token } = useParams();
@@ -105,7 +104,7 @@ const RegisterInvited = () => {
                 <div className="row justify-content-center">
                     <div className="col-12 col-md-8 col-lg-6">
                         <div className="login-brand">
-                            <img src={logo} alt="RACO EMS Logo" style={{ width: '64px', height: '64px', objectFit: 'contain', marginBottom: '8px' }} />
+                            <img src="/assets/icons/new-logo.png" alt="RACO EMS Logo" style={{ width: '64px', height: '64px', objectFit: 'contain', marginBottom: '8px' }} />
                             <h2 style={{ color: '#6777ef' }}>RACO AI EMS</h2>
                         </div>
                         <div className="card card-primary">

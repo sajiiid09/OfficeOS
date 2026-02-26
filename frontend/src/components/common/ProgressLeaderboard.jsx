@@ -24,7 +24,6 @@ const ProgressLeaderboard = ({ mode = "users", type = null, includeLeaders = fal
         if (socket) {
             socket.on('progress-update', (data) => {
                 if (isMounted.current) {
-                    console.log('Real-time progress update received:', data);
                     fetchData();
                 }
             });

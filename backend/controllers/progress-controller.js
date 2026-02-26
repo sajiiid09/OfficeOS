@@ -6,7 +6,7 @@ class ProgressController {
     submitSelfProgress = async (req, res, next) => {
         try {
             if (!['employee', 'leader'].includes(req.user.type)) {
-                return next(ErrorHandler.unAuthorized('Only employees or leaders can submit progress'));
+                return next(ErrorHandler.forbidden('Only employees or leaders can submit progress'));
             }
             let { progress, progressNote } = req.body;
             if (progress === undefined || progress === null) {
@@ -17,33 +17,33 @@ class ProgressController {
                 return next(ErrorHandler.badRequest('Progress must be between 0 and 100'));
             }
             const doc = await progressService.upsertForUser(req.user._id, progress, progressNote);
-            return res.json({ success: true, message: 'Progress saved', data: doc });
+            res.json({ success: true, message: 'Progress saved', data: doc });
         } catch (error) {
-            return next(ErrorHandler.serverError(error.message));
+            next(error);
         }
     }
 
     getSelfProgress = async (req, res, next) => {
         try {
             if (!['employee', 'leader'].includes(req.user.type)) {
-                return next(ErrorHandler.unAuthorized('Only employees or leaders can view their progress'));
+                return next(ErrorHandler.forbidden('Only employees or leaders can view their progress'));
             }
             const data = await progressService.getForUser(req.user._id);
-            return res.json({ success: true, data });
+            res.json({ success: true, data });
         } catch (error) {
-            return next(ErrorHandler.serverError(error.message));
+            next(error);
         }
     }
 
     getAllProgress = async (req, res, next) => {
         try {
-            if (!req.user || !['super_admin', 'sub_admin'].includes(req.user.type)) {
-                return next(ErrorHandler.unAuthorized('Only admins can view all progress'));
+            if (!['super_admin', 'sub_admin'].includes(req.user?.type)) {
+                return next(ErrorHandler.forbidden('Only admins can view all progress'));
             }
             const data = await progressService.getAll();
-            return res.json({ success: true, data });
+            res.json({ success: true, data });
         } catch (error) {
-            return next(ErrorHandler.serverError(error.message));
+            next(error);
         }
     }
 }

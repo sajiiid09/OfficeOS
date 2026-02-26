@@ -1,67 +1,73 @@
-import { NavLink, useHistory } from "react-router-dom";
-import { useDispatch } from "react-redux";
-import { dLogout } from "../http";
-import { setAuth } from "../store/auth-slice";
-import swal from 'sweetalert';
+/**
+ * AdminMenu — Sidebar navigation for super_admin / sub_admin users.
+ * Pure presentational. Logout logic delegated to useLogout hook.
+ */
 
-const Admin = () => {
-    const dispatch = useDispatch();
-    const history = useHistory();
+import React from 'react';
+import { NavLink } from 'react-router-dom';
+import { useLogout } from '../hooks/useLogout';
 
-    const logout = async (e) => {
-        if (e) e.preventDefault();
-        
-        const willLogout = await swal({
-            title: "Are you sure?",
-            text: "Do you want to logout?",
-            icon: "warning",
-            buttons: ["Cancel", "Yes, Logout"],
-            dangerMode: true,
-        });
-        
-        if (!willLogout) {
-            return;
-        }
-        
-        try {
-            await dLogout();
-            dispatch(setAuth(null));
-            history.push('/login');
-        } catch (err) {
-            console.error("Logout failed", err);
-            dispatch(setAuth(null));
-            history.push('/login');
-        }
-    }
+/** @type {Array<{ to: string, icon: string, label: string }>} */
+const MAIN_LINKS = [
+  { to: '/home', icon: 'fas fa-home', label: 'Dashboard' },
+  { to: '/chat', icon: 'fas fa-comments', label: 'Chat Room' },
+  { to: '/employees', icon: 'fas fa-users', label: 'Employees' },
+  { to: '/leaders', icon: 'fas fa-user-friends', label: 'Leaders' },
+  { to: '/admins', icon: 'fas fa-users-cog', label: 'Admins' },
+  { to: '/teams', icon: 'fas fa-fire', label: 'Teams' },
+  { to: '/attendance', icon: 'fas fa-user', label: 'Attendance' },
+  { to: '/admin/attendance-management', icon: 'fas fa-user-edit', label: 'Manage Attendance' },
+  { to: '/leaves', icon: 'fas fa-book', label: 'Leaves' },
+  { to: '/assignSalary', icon: 'fas fa-pen', label: 'Assign Salary' },
+  { to: '/salaries', icon: 'fas fa-piggy-bank', label: 'Salaries' },
+  { to: '/admin/problems', icon: 'fas fa-exclamation-triangle', label: 'User Problems' },
+  { to: '/admin/progress', icon: 'fas fa-chart-line', label: 'Progress Logs' },
+  { to: '/admin/invitations', icon: 'fas fa-history', label: 'Invitations' },
+  { to: '/admin/empires', icon: 'fas fa-building', label: 'Employers' },
+];
+
+const STARTER_LINKS = [
+  { to: '/inviteuser', icon: 'fas fa-envelope-open-text', label: 'Invite User' },
+  { to: '/addteam', icon: 'fas fa-address-card', label: 'Add Team' },
+  { to: '/Addtask', icon: 'far fa-square', label: 'Assign Task' },
+  { to: '/letterhead', icon: 'far fa-file-alt', label: 'Letterhead' },
+];
+
+const AdminMenu = () => {
+  const logout = useLogout();
 
   return (
     <ul className="sidebar-menu overflow-auto">
-      <li><NavLink className="nav-link" to="/home"><i className="fas fa-home"></i> <span>Dashboard</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/chat"><i className="fas fa-comments"></i> <span>Chat Room</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/employees"><i className="fas fa-users"></i> <span>Employees</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/leaders"><i className="fas fa-user-friends"></i> <span>Leaders</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/admins"><i className="fas fa-users-cog"></i> <span>Admins</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/teams"><i className="fas fa-fire"></i> <span>Teams</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/attendance"><i className="fas fa-user"></i> <span>Attendance</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/admin/attendance-management"><i className="fas fa-user-edit"></i> <span>Manage Attendance</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/leaves"><i className="fas fa-book"></i><span>Leaves</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/assignSalary"><i className="fas fa-pen"></i> <span>Assign Salary</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/salaries"><i className="fas fa-piggy-bank"></i> <span>Salaries</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/admin/problems"><i className="fas fa-exclamation-triangle"></i> <span>User Problems</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/admin/progress"><i className="fas fa-chart-line"></i> <span>Progress Logs</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/admin/invitations"><i className="fas fa-history"></i> <span>Invitations</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/admin/empires"><i className="fas fa-building"></i> <span>Employers</span></NavLink></li>
-
+      {MAIN_LINKS.map(({ to, icon, label }) => (
+        <li key={to}>
+          <NavLink className="nav-link" to={to}>
+            <i className={icon} aria-hidden="true" /> <span>{label}</span>
+          </NavLink>
+        </li>
+      ))}
 
       <li className="menu-header">Starter</li>
-      <li><NavLink className="nav-link" to="/inviteuser"><i className="fas fa-envelope-open-text"></i> <span>Invite User</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/addteam"><i className="fas fa-address-card"></i> <span>Add Team</span></NavLink></li>
-      <li><NavLink className="nav-link" to="/Addtask"><i className="far fa-square"></i> <span>Assign Task</span></NavLink></li>
 
-        <li><NavLink className="nav-link" to="/letterhead"><i className="far fa-square"></i> <span>Pad</span></NavLink></li>
-      <li><NavLink className="nav-link"  onClick={logout} to="#"><i className="fas fa-sign-out-alt"></i> <span>Logout</span></NavLink></li>
+      {STARTER_LINKS.map(({ to, icon, label }) => (
+        <li key={to}>
+          <NavLink className="nav-link" to={to}>
+            <i className={icon} aria-hidden="true" /> <span>{label}</span>
+          </NavLink>
+        </li>
+      ))}
+
+      <li>
+        <button
+          type="button"
+          className="nav-link"
+          onClick={logout}
+          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+        >
+          <i className="fas fa-sign-out-alt" aria-hidden="true" /> <span>Logout</span>
+        </button>
+      </li>
     </ul>
-  )
-}
+  );
+};
 
-export default Admin;
+export default AdminMenu;

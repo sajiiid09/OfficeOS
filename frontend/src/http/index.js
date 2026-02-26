@@ -10,7 +10,7 @@ const getBackendUrl = () => {
         return envUrl;
     }
 
-    return 'http://192.168.10.13:5500';
+    return 'http://localhost:5500';
 };
 
 export const backendUrl = getBackendUrl();

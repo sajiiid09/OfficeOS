@@ -2,14 +2,18 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const userService = require('../services/user-service');
 const UserDto = require('../dtos/user-dto');
+const TeamDto = require('../dtos/team-dto');
 const crypto = require('crypto');
 const teamService = require('../services/team-service');
 const attendanceService = require('../services/attendance-service');
+const attendanceSummaryService = require('../services/attendance-summary-service');
 const problemService = require('../services/problem-service');
-const fs = require('fs');
-const path = require('path');
+const progressService = require('../services/progress-service');
 const fileService = require('../services/file-service');
-const InvitationModel = require('../models/invitation-model'); // Import Invitation Model
+const notificationService = require('../services/notification-service');
+const socketService = require('../services/socket-service');
+const InvitationModel = require('../models/invitation-model');
+const TeamModel = require('../models/team-model');
 const ErrorHandler = require('../utils/error-handler');
 
 
@@ -21,11 +25,6 @@ class UserController {
             let { name, email, password, type, address, permanentAddress, mobile } = req.body;
             const username = 'user' + crypto.randomInt(11111111, 999999999);
 
-            console.log('=== CREATE USER REQUEST ===');
-            console.log('Body:', req.body);
-            console.log('File:', file);
-
-            // Validation
             if (!name) return next(ErrorHandler.badRequest('Name is required'));
             if (!email) return next(ErrorHandler.badRequest('Email is required'));
             if (!password) return next(ErrorHandler.badRequest('Password is required'));
@@ -36,229 +35,166 @@ class UserController {
 
             type = type.toLowerCase();
 
-            // Check if user already exists
             const existingUser = await userService.findUser({ email });
             if (existingUser) return next(ErrorHandler.badRequest('Email already exists'));
 
             if (['super_admin', 'sub_admin'].includes(type)) {
-                const adminPassword = req.body.adminPassword;
-                if (!adminPassword)
-                    return next(ErrorHandler.badRequest(`Please Enter Your Password to Add ${name} as an Admin`));
-                const { _id } = req.user;
-                const { password: hashPassword } = await userService.findUser({ _id });
-                const isPasswordValid = await userService.verifyPassword(adminPassword, hashPassword);
-                if (!isPasswordValid) return next(ErrorHandler.unAuthorized('You have entered a wrong password'));
+                const { adminPassword } = req.body;
+                if (!adminPassword) return next(ErrorHandler.badRequest(`Please Enter Your Password to Add ${name} as an Admin`));
+
+                const admin = await userService.findUser({ _id: req.user._id });
+                const isPasswordValid = await userService.verifyPassword(adminPassword, admin.password);
+                if (!isPasswordValid) return next(ErrorHandler.unauthorized('You have entered a wrong password'));
             }
 
-            const user = {
-                name,
-                email,
-                username,
-                mobile: Number(mobile),  // Convert to number
-                password,
-                type,
+            const userResp = await userService.createUser({
+                name, email, username,
+                mobile: Number(mobile),
+                password, type,
                 address: address || permanentAddress,
                 permanentAddress: permanentAddress || address,
                 image: file.path
-            }
+            });
 
-            console.log('Creating user:', user);
-            const userResp = await userService.createUser(user);
-
-            console.log('User created:', userResp);
             if (!userResp) return next(ErrorHandler.serverError('Failed To Create An Account'));
             res.json({ success: true, message: 'User has been Added', user: new UserDto(userResp) });
         } catch (error) {
-            console.error('=== CREATE USER ERROR ===', error);
-            return next(ErrorHandler.serverError('Failed To Create User: ' + error.message));
+            next(error);
         }
     }
 
     updateUser = async (req, res, next) => {
-        console.log('>>> [UserController.updateUser] Entered controller handle');
         try {
             const file = req.file;
-            const filename = file ? (file.path || file.url || file.secure_url) : null;
-            let user, id;
-            console.log('Update User Request');
-            console.log('File:', file);
-            console.log('Filename:', filename);
-            console.log('User Type:', req.user.type);
-
             const isAdminRequest = ['super_admin', 'sub_admin'].includes(req.user.type);
             const targetId = req.params.id;
+            const id = (isAdminRequest && targetId) ? targetId : req.user._id;
 
             if (isAdminRequest && targetId) {
-                id = targetId;
-                let { name, username, email, password, type, status, address, permanentAddress, mobile } = req.body;
-                // Optional progress updates
-                let { progress, progressNote } = req.body;
-
                 if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User Id'));
 
-                // Fetch the user first to check if type is actually changing
                 const dbUser = await userService.findUser({ _id: id });
                 if (!dbUser) return next(ErrorHandler.badRequest('No User Found'));
 
-                // Normalize type for comparison (trim and lowercase)
-                const newType = type ? type.trim().toLowerCase() : null;
-                const currentType = dbUser.type ? dbUser.type.trim().toLowerCase() : null;
+                const newType = req.body.type?.trim().toLowerCase();
+                const currentType = dbUser.type?.trim().toLowerCase();
 
-                console.log('Type comparison:', { newType, currentType, areEqual: newType === currentType });
-
-                // Track if we need to remove from team
-                let removeFromTeam = false;
-
-                // Only require admin password if type is ACTUALLY changing
                 if (newType && currentType && newType !== currentType) {
-                    console.log('Type is changing, requiring admin password');
-                    const { _id } = req.user;
-                    if (_id.toString() === id.toString()) return next(ErrorHandler.badRequest(`You Can't Change Your Own Position`));
-                    const { adminPassword } = req.body;
-                    if (!adminPassword)
-                        return next(ErrorHandler.badRequest(`Please Enter Your Password To Change The Type`));
-                    const { password: hashPassword } = await userService.findUser({ _id });
-                    const isPasswordValid = await userService.verifyPassword(adminPassword, hashPassword);
-                    if (!isPasswordValid) return next(ErrorHandler.unAuthorized('You have entered a wrong password'));
-
-                    // Handle team constraints when changing type
-                    if ((currentType === 'employee') && (['super_admin', 'sub_admin', 'leader'].includes(newType))) {
-                        // Automatically remove from team when promoting employee to admin/leader
-                        if (dbUser.team != null) {
-                            console.log(`Removing ${dbUser.name} from team due to type change`);
-                            removeFromTeam = true;
-                        }
+                    if (req.user._id.toString() === id.toString()) {
+                        return next(ErrorHandler.badRequest("You Can't Change Your Own Position"));
                     }
 
-                    if ((currentType === 'leader') && (['super_admin', 'sub_admin', 'employee'].includes(newType))) {
-                        // Check if they're leading a team
+                    const { adminPassword } = req.body;
+                    if (!adminPassword) return next(ErrorHandler.badRequest('Please Enter Your Password To Change The Type'));
+
+                    const admin = await userService.findUser({ _id: req.user._id });
+                    const isPasswordValid = await userService.verifyPassword(adminPassword, admin.password);
+                    if (!isPasswordValid) return next(ErrorHandler.unauthorized('You have entered a wrong password'));
+
+                    if (currentType === 'employee' && ['super_admin', 'sub_admin', 'leader'].includes(newType) && dbUser.team) {
+                        // Will remove from team when processing update below
+                    }
+
+                    if (currentType === 'leader' && ['super_admin', 'sub_admin', 'employee'].includes(newType)) {
                         const leadingTeam = await teamService.findTeam({ leader: id });
                         if (leadingTeam) {
-                            return next(ErrorHandler.badRequest(`Error : ${dbUser.name} is leading a team. Please assign a new leader first.`));
+                            return next(ErrorHandler.badRequest(`${dbUser.name} is leading a team. Please assign a new leader first.`));
                         }
                     }
-                } else if (newType && currentType) {
-                    console.log('Type is not changing, skipping password check');
                 }
             }
-            else {
-                // Self update
-                id = req.user._id;
-                console.log('Performing self-update for user:', id);
-            }
 
-            // Build update object - only include fields that are provided
-            user = {};
-
-            // Define all possible fields we want to sync from req.body
-            const syncFields = [
+            const updateFields = {};
+            const allowedFields = [
                 'name', 'username', 'email', 'mobile', 'password', 'type',
                 'address', 'permanentAddress', 'status', 'progress', 'progressNote',
                 'fatherName', 'motherName', 'presentAddress', 'bloodGroup',
                 'employeeId', 'empire', 'village', 'union', 'district', 'position'
             ];
 
-            syncFields.forEach(field => {
-                if (req.body[field] !== undefined) {
-                    // Handle specific type conversions if needed
-                    if (field === 'progress' && req.body[field] !== '') {
-                        user[field] = Number(req.body[field]);
-                    } else if (field === 'type' && !id && !isAdminRequest) {
-                        // Skip type update for self-update if not admin (though it's blocked earlier anyway)
-                    } else if (field === 'type' && req.body[field]) {
-                        user[field] = req.body[field].trim().toLowerCase();
-                    } else if (field === 'status' && req.body[field]) {
-                        user[field] = req.body[field].trim().toLowerCase();
-                    } else if (field === 'password' && req.body[field]) {
-                        // Password hashing will happen below or via pre-save hook
-                        // Actually, we hash it manually if it's sent
-                    } else if (field === 'empire' && req.body[field] === '') {
-                        user[field] = null;
-                    } else {
-                        user[field] = req.body[field];
-                    }
+            for (const field of allowedFields) {
+                if (req.body[field] === undefined) continue;
+
+                if (field === 'progress' && req.body[field] !== '') {
+                    updateFields[field] = Number(req.body[field]);
+                } else if (field === 'type' && req.body[field]) {
+                    updateFields[field] = req.body[field].trim().toLowerCase();
+                } else if (field === 'status' && req.body[field]) {
+                    updateFields[field] = req.body[field].trim().toLowerCase();
+                } else if (field === 'empire' && req.body[field] === '') {
+                    updateFields[field] = null;
+                } else {
+                    updateFields[field] = req.body[field];
                 }
-            });
+            }
 
-            if (user.password) {
+            if (updateFields.password) {
                 const salt = await bcrypt.genSalt(10);
-                user.password = await bcrypt.hash(user.password, salt);
+                updateFields.password = await bcrypt.hash(updateFields.password, salt);
             }
 
-            if (filename) {
-                user.image = filename;
-            }
-            console.log('Update data final:', user);
-            console.log('Request File:', req.file);
-            const userResp = await userService.updateUser(id, user);
-            console.log('Update response:', JSON.stringify(new UserDto(userResp), null, 2));
+            if (file) updateFields.image = file.path;
+
+            const userResp = await userService.updateUser(id, updateFields);
             if (!userResp) return next(ErrorHandler.serverError('Failed To Update Account'));
-            console.log('✅ MongoDB Persistence Confirmed - Updated image:', userResp.image);
+
             res.json({ success: true, message: 'Account Updated', user: new UserDto(userResp) });
         } catch (error) {
-            console.error('=== UPDATE USER ERROR ===', error);
-            return next(ErrorHandler.serverError('Failed To Update Account: ' + error.message));
+            next(error);
         }
     }
 
-    updateUserProgress = async (req, res, next) => {
-        return next(ErrorHandler.unAuthorized('Progress updates must be submitted by the authenticated user only'));
-    }
-
     getUsers = async (req, res, next) => {
-        const type = req.path.split('/').pop().replace('s', '');
-        const emps = await userService.findUsers({ type });
-        const employees = emps ? emps.map((o) => new UserDto(o)) : [];
-        res.json({ success: true, message: `${type.charAt(0).toUpperCase() + type.slice(1).replace(' ', '')} List Found`, data: employees })
-    }
-
-
-    getFreeEmployees = async (req, res, next) => {
         try {
-            // Return all employees since they can now be in multiple teams
-            const emps = await userService.findUsers({ type: 'employee' });
-            const employees = emps ? emps.map((o) => new UserDto(o)) : [];
-            res.json({ success: true, message: 'Employees List Found', data: employees });
+            const { type } = req.params;
+            if (!type) return next(ErrorHandler.badRequest('Type parameter is required'));
+
+            const users = await userService.findUsers({ type: type.toLowerCase() });
+            const data = users ? users.map(u => new UserDto(u)) : [];
+            const label = type.charAt(0).toUpperCase() + type.slice(1);
+            res.json({ success: true, message: `${label} List Found`, data });
         } catch (error) {
             next(error);
         }
     }
 
 
-    getUser = async (req, res, next) => {
-        const { id } = req.params;
-        const type = req.path.replace(id, '').replace('/', '').replace('/', '');
-        console.log(`Fetching user with ID: ${id}, Type: ${type}`);
-        if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest(`Invalid ${type.charAt(0).toUpperCase() + type.slice(1).replace(' ', '')} Id`));
-        let emp = await userService.findUser({ _id: id, type });
-        // Fallback for mixed lists (e.g., ID card printing) where route type can differ from actual user type.
-        if (!emp) {
-            emp = await userService.findUser({ _id: id });
+    getFreeEmployees = async (req, res, next) => {
+        try {
+            const employees = await userService.findUsers({ type: 'employee' });
+            const data = employees ? employees.map(o => new UserDto(o)) : [];
+            res.json({ success: true, message: 'Employees List Found', data });
+        } catch (error) {
+            next(error);
         }
-        console.log(`User found: ${emp ? emp.name : 'NOT FOUND'}`);
-        if (!emp) return next(ErrorHandler.notFound(`No ${type.charAt(0).toUpperCase() + type.slice(1).replace(' ', '')} Found`));
-        const userData = new UserDto(emp);
-        console.log(`Returning user with image: ${userData.image}`);
-        res.json({ success: true, message: 'Employee Found', data: userData })
+    }
+
+    getUser = async (req, res, next) => {
+        try {
+            const { id } = req.params;
+            if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User Id'));
+
+            let user = await userService.findUser({ _id: id });
+            if (!user) return next(ErrorHandler.notFound('User Not Found'));
+
+            res.json({ success: true, message: 'Employee Found', data: new UserDto(user) });
+        } catch (error) {
+            next(error);
+        }
     }
 
     getUserNoFilter = async (req, res, next) => {
-        const { id } = req.params;
-        console.log(`Fetching user (no filter) with ID: ${id}`);
-        if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User Id'));
+        try {
+            const { id } = req.params;
+            if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User Id'));
 
-        // Authorization: Admin, Super Admin, or Sub Admin
-        const allowedRoles = ['super_admin', 'sub_admin'];
-        if (!req.user || !allowedRoles.includes(req.user.type.toLowerCase())) {
-            return next(ErrorHandler.unAuthorized('Access denied: Unauthorized role'));
+            const user = await userService.findUser({ _id: id });
+            if (!user) return next(ErrorHandler.notFound('No User Found'));
+
+            res.json({ success: true, message: 'User Found', data: new UserDto(user) });
+        } catch (error) {
+            next(error);
         }
-
-        const emp = await userService.findUser({ _id: id });
-        console.log(`User found: ${emp ? emp.name : 'NOT FOUND'}`);
-        if (!emp) return next(ErrorHandler.notFound('No User Found'));
-        const userData = new UserDto(emp);
-        console.log(`Returning user with image: ${userData.image}`);
-        res.json({ success: true, message: 'User Found', data: userData })
     }
 
     getLeaders = async (req, res, next) => {
@@ -281,132 +217,114 @@ class UserController {
     markEmployeeAttendance = async (req, res, next) => {
         try {
             const { employeeID, location } = req.body;
-            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-            const d = new Date();
+            const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const TIMEZONE = process.env.TIMEZONE || 'Asia/Dhaka';
+            const now = new Date();
 
-            // Format check-in time as HH:MM:SS with Asia/Dhaka timezone
-            const checkInTime = d.toLocaleTimeString('en-US', { hour12: false, timeZone: 'Asia/Dhaka' });
+            const checkInTime = now.toLocaleTimeString('en-US', { hour12: false, timeZone: TIMEZONE });
 
-            const newAttendance = {
+            const todayFilter = {
                 employeeID,
-                year: d.getFullYear(),
-                month: d.getMonth() + 1,
-                date: d.getDate(),
-                day: days[d.getDay()],
-                present: true,
-                checkInTime: checkInTime,
-                checkInLocation: location || null
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+                date: now.getDate()
             };
 
-            const isAttendanceMarked = await attendanceService.findAttendance({
-                employeeID,
-                year: d.getFullYear(),
-                month: d.getMonth() + 1,
-                date: d.getDate()
+            const existing = await attendanceService.findAttendance(todayFilter);
+            if (existing) {
+                return next(ErrorHandler.forbidden(`${now.toLocaleDateString()} ${DAYS[now.getDay()]} Attendance Already Marked!`));
+            }
+
+            const attendance = await attendanceService.markAttendance({
+                ...todayFilter,
+                day: DAYS[now.getDay()],
+                present: true,
+                checkInTime,
+                checkInLocation: location || null
             });
-            if (isAttendanceMarked) return next(ErrorHandler.notAllowed(d.toLocaleDateString() + " " + days[d.getDay()] + " " + "Attendance Already Marked!"));
+            if (!attendance) return next(ErrorHandler.serverError('Failed to mark attendance'));
 
-            const resp = await attendanceService.markAttendance(newAttendance);
-            console.log(resp);
-            if (!resp) return next(ErrorHandler.serverError('Failed to mark attendance'));
-
-            const msg = d.toLocaleDateString() + " " + days[d.getDay()] + " " + "Attendance Marked! Check-in: " + checkInTime;
-
-            res.json({ success: true, newAttendance, message: msg });
-
+            res.json({
+                success: true,
+                newAttendance: attendance,
+                message: `${now.toLocaleDateString()} ${DAYS[now.getDay()]} Attendance Marked! Check-in: ${checkInTime}`
+            });
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
     markEmployeeCheckOut = async (req, res, next) => {
         try {
             const { employeeID, location } = req.body;
-            const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-            const d = new Date();
+            const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+            const TIMEZONE = process.env.TIMEZONE || 'Asia/Dhaka';
+            const now = new Date();
 
-            // Format check-out time as HH:MM:SS with Asia/Dhaka timezone
-            const checkOutTime = d.toLocaleTimeString('en-US', { hour12: false, timeZone: 'Asia/Dhaka' });
+            const checkOutTime = now.toLocaleTimeString('en-US', { hour12: false, timeZone: TIMEZONE });
 
-            // Find today's attendance record
             const todayAttendance = await attendanceService.findAttendance({
                 employeeID,
-                year: d.getFullYear(),
-                month: d.getMonth() + 1,
-                date: d.getDate()
+                year: now.getFullYear(),
+                month: now.getMonth() + 1,
+                date: now.getDate()
             });
 
             if (!todayAttendance) return next(ErrorHandler.notFound('No attendance record found for today. Please mark attendance first.'));
-            if (todayAttendance.checkOutTime) return next(ErrorHandler.notAllowed('Check-out already marked!'));
+            if (todayAttendance.checkOutTime) return next(ErrorHandler.forbidden('Check-out already marked!'));
 
-            // Update with checkout time
             const updated = await attendanceService.updateAttendance(todayAttendance._id, {
                 checkOutTime,
                 checkOutLocation: location || null
             });
             if (!updated) return next(ErrorHandler.serverError('Failed to mark check-out'));
 
-            const msg = d.toLocaleDateString() + " " + days[d.getDay()] + " " + "Check-out Marked! Time: " + checkOutTime;
-
-            res.json({ success: true, checkOutTime, message: msg });
-
+            res.json({
+                success: true,
+                checkOutTime,
+                message: `${now.toLocaleDateString()} ${DAYS[now.getDay()]} Check-out Marked! Time: ${checkOutTime}`
+            });
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
     viewEmployeeAttendance = async (req, res, next) => {
         try {
-            const data = req.body;
-            const resp = await attendanceService.findAllAttendance(data);
+            const resp = await attendanceService.findAllAttendance(req.body);
             if (!resp) return next(ErrorHandler.notFound('No Attendance found'));
-
             res.json({ success: true, data: resp });
-
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
     applyLeaveApplication = async (req, res, next) => {
         try {
-            const data = req.body;
-            const { applicantID, title, type, startDate, endDate, appliedDate, period, reason } = data;
-            const newLeaveApplication = {
-                applicantID,
-                title,
-                type,
-                startDate,
-                endDate,
-                appliedDate,
-                period,
-                reason,
-                adminResponse: "Pending"
-            };
+            const { applicantID, title, type, startDate, endDate, appliedDate, period, reason } = req.body;
 
-            const isLeaveApplied = await userService.findLeaveApplication({ applicantID, startDate, endDate, appliedDate });
-            if (isLeaveApplied) return next(ErrorHandler.notAllowed('Leave Already Applied'));
+            const existing = await userService.findLeaveApplication({ applicantID, startDate, endDate, appliedDate });
+            if (existing) return next(ErrorHandler.forbidden('Leave Already Applied'));
 
-            const resp = await userService.createLeaveApplication(newLeaveApplication);
-            if (!resp) return next(ErrorHandler.serverError('Failed to apply leave'));
+            const leave = await userService.createLeaveApplication({
+                applicantID, title, type, startDate, endDate, appliedDate, period, reason,
+                adminResponse: 'Pending'
+            });
+            if (!leave) return next(ErrorHandler.serverError('Failed to apply leave'));
 
-            res.json({ success: true, data: resp });
-
+            res.json({ success: true, data: leave });
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
     viewLeaveApplications = async (req, res, next) => {
         try {
-            const data = req.body;
-            const resp = await userService.findAllLeaveApplications(data);
+            const resp = await userService.findAllLeaveApplications(req.body);
             if (!resp) return next(ErrorHandler.notFound('No Leave Applications found'));
-
             res.json({ success: true, data: resp });
-
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
@@ -415,48 +333,35 @@ class UserController {
             const { id } = req.params;
             const body = req.body;
 
-            // Fetch the leave application
             const leaveApp = await userService.findLeaveApplication({ _id: id });
             if (!leaveApp) return next(ErrorHandler.notFound('Leave application not found'));
 
             const previousStatus = leaveApp.adminResponse;
             const newStatus = body.adminResponse;
 
-            // If admin edited dates, recalculate period
             if (body.startDate || body.endDate) {
                 const start = new Date(body.startDate || leaveApp.startDate);
                 const end = new Date(body.endDate || leaveApp.endDate);
-                const diffTime = Math.abs(end - start);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                body.period = diffDays;
+                body.period = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1;
             }
 
-            // Update the leave application
-            const isLeaveUpdated = await userService.updateLeaveApplication(id, body);
-            if (!isLeaveUpdated) return next(ErrorHandler.serverError('Failed to update leave'));
-
-            // Handle attendance integration based on status change
-            const attendanceSummaryService = require('../services/attendance-summary-service');
+            const updated = await userService.updateLeaveApplication(id, body);
+            if (!updated) return next(ErrorHandler.serverError('Failed to update leave'));
 
             if (newStatus === 'Approved') {
-                // Fetch the updated leave app to get correct dates/period for attendance records
                 const updatedLeaveApp = await userService.findLeaveApplication({ _id: id });
-
-                // Create attendance records for approved leave
                 await attendanceSummaryService.createLeaveAttendanceRecords(id, {
                     applicantID: updatedLeaveApp.applicantID,
                     startDate: updatedLeaveApp.startDate,
                     endDate: updatedLeaveApp.endDate
                 });
             } else if (previousStatus === 'Approved' && newStatus !== 'Approved') {
-                // Remove attendance records if leave was unapproved/rejected
                 await attendanceSummaryService.removeLeaveAttendanceRecords(id);
             }
 
             res.json({ success: true, message: 'Leave Updated' });
         } catch (error) {
-            console.error('Error updating leave:', error);
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
@@ -465,8 +370,6 @@ class UserController {
             const { id } = req.params;
             if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid Leave Application Id'));
 
-            // Cleanup associated attendance records if any
-            const attendanceSummaryService = require('../services/attendance-summary-service');
             await attendanceSummaryService.removeLeaveAttendanceRecords(id);
 
             const result = await userService.deleteLeaveApplication(id);
@@ -474,8 +377,7 @@ class UserController {
 
             res.json({ success: true, message: 'Leave application deleted successfully' });
         } catch (error) {
-            console.error('Error deleting leave application:', error);
-            res.json({ success: false, error: error.message });
+            next(error);
         }
     }
 
@@ -484,103 +386,69 @@ class UserController {
             const data = req.body;
             if (!data.bonus) data.bonus = 0;
             if (!data.reasonForBonus) data.reasonForBonus = 'N/A';
-            const d = new Date();
-            const year = data.year || d.getFullYear();
-            const month = data.month || (d.getMonth() + 1);
 
-            const isSalaryAssigned = await userService.findSalary({
-                employeeID: data.employeeID,
-                year,
-                month
-            });
-            if (isSalaryAssigned) return next(ErrorHandler.serverError('Salary already assigned for this month'));
+            const now = new Date();
+            const year = data.year || now.getFullYear();
+            const month = data.month || (now.getMonth() + 1);
 
-            data["year"] = year;
-            data["month"] = month;
-            data["assignedDate"] = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
-            const resp = await userService.assignSalary(data);
-            if (!resp) return next(ErrorHandler.serverError('Failed to assign salary'));
+            const existing = await userService.findSalary({ employeeID: data.employeeID, year, month });
+            if (existing) return next(ErrorHandler.conflict('Salary already assigned for this month'));
 
-            // Notify User
-            const Notification = require('../models/notification-model');
-            await Notification.create({
-                title: 'Salary Assigned',
-                message: `Your salary for ${month}/${year} has been assigned.`,
-                type: 'salary',
-                link: '/userSalary',
-                user: data.employeeID
-            });
+            data.year = year;
+            data.month = month;
+            data.assignedDate = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
-            // Emit Real-time Notification to User
-            const socketService = require('../services/socket-service');
-            socketService.emitToUser(data.employeeID, 'notification', {
+            const salary = await userService.assignSalary(data);
+            if (!salary) return next(ErrorHandler.serverError('Failed to assign salary'));
+
+            await notificationService.notify(data.employeeID, {
                 title: 'Salary Assigned',
                 message: `Your salary for ${month}/${year} has been assigned.`,
                 type: 'salary',
                 link: '/userSalary'
             });
 
-            res.json({ success: true, data: resp });
+            res.json({ success: true, data: salary });
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
     updateEmployeeSalary = async (req, res, next) => {
         try {
-            const body = req.body;
-            const { employeeID, month, year } = body;
-            const d = new Date();
+            const { employeeID, month, year } = req.body;
+            const now = new Date();
+            const targetMonth = month || (now.getMonth() + 1);
+            const targetYear = year || now.getFullYear();
 
-            // Use provided month/year or fallback to current (fallback is risky if not provided)
-            const targetMonth = month || (d.getMonth() + 1);
-            const targetYear = year || d.getFullYear();
+            req.body.assignedDate = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()}`;
 
-            body["assignedDate"] = d.getFullYear() + "-" + (d.getMonth() + 1) + "-" + d.getDate();
+            const updated = await userService.updateSalary(
+                { employeeID, month: targetMonth, year: targetYear },
+                req.body
+            );
+            if (!updated) return next(ErrorHandler.serverError('Failed to update salary'));
 
-            const isSalaryUpdated = await userService.updateSalary({
-                employeeID,
-                month: targetMonth,
-                year: targetYear
-            }, body);
-            console.log(isSalaryUpdated);
-            if (!isSalaryUpdated) return next(ErrorHandler.serverError('Failed to update salary'));
-
-            // Notify User
-            const Notification = require('../models/notification-model');
-            await Notification.create({
+            await notificationService.notify(employeeID, {
                 title: 'Salary Updated',
-                message: `Your salary for ${(month || d.getMonth() + 1)}/${year || d.getFullYear()} has been updated.`,
-                type: 'salary',
-                link: '/userSalary',
-                user: employeeID
-            });
-
-            // Emit Real-time Notification to User
-            const socketService = require('../services/socket-service');
-            socketService.emitToUser(employeeID, 'notification', {
-                title: 'Salary Updated',
-                message: `Your salary for ${(month || d.getMonth() + 1)}/${year || d.getFullYear()} has been updated.`,
+                message: `Your salary for ${targetMonth}/${targetYear} has been updated.`,
                 type: 'salary',
                 link: '/userSalary'
             });
 
             res.json({ success: true, message: 'Salary Updated' });
-
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
     viewSalary = async (req, res, next) => {
         try {
-            const data = req.body;
-            const resp = await userService.findAllSalary(data);
+            const resp = await userService.findAllSalary(req.body);
             if (!resp) return next(ErrorHandler.notFound('No Salary Found'));
             res.json({ success: true, data: resp });
-
         } catch (error) {
-            res.json({ success: false, error });
+            next(error);
         }
     }
 
@@ -598,47 +466,31 @@ class UserController {
         }
     }
 
-    // Get all admin users
     getAdminUsers = async (req, res, next) => {
         try {
             const users = await userService.findAdmins();
-            const usersDto = users ? users.map(user => new UserDto(user)) : [];
-            res.json({ success: true, data: usersDto });
+            const data = users ? users.map(u => new UserDto(u)) : [];
+            res.json({ success: true, data });
         } catch (error) {
             next(error);
         }
     }
 
-    // Get all leader users
     getLeaderUsers = async (req, res, next) => {
         try {
             const users = await userService.findLeaders();
-            const usersDto = users ? users.map(user => new UserDto(user)) : [];
-            res.json({ success: true, data: usersDto });
+            const data = users ? users.map(u => new UserDto(u)) : [];
+            res.json({ success: true, data });
         } catch (error) {
             next(error);
         }
     }
 
-    // Get all employee users
     getEmployeeUsers = async (req, res, next) => {
         try {
             const users = await userService.findAllEmployees();
-            const usersDto = users ? users.map(user => new UserDto(user)) : [];
-            res.json({ success: true, data: usersDto });
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    // Get all employee users
-    getFreeEmployees = async (req, res, next) => {
-        try {
-            // Return all employees since they can now be in multiple teams
-            const employees = await userService.findUsers({ type: 'employee' });
-            if (!employees) return next(ErrorHandler.notFound('No Employees Found'));
-            const data = employees.map(o => new UserDto(o));
-            res.json({ success: true, message: 'Employees Found', data });
+            const data = users ? users.map(u => new UserDto(u)) : [];
+            res.json({ success: true, data });
         } catch (error) {
             next(error);
         }
@@ -652,26 +504,16 @@ class UserController {
             const user = await userService.findUser({ _id: id });
             if (!user) return next(ErrorHandler.notFound('User not found'));
 
-            // Cleanup: If the user is a leader, handle their team and employers
             if (user.type === 'leader') {
                 const teams = await teamService.findTeams({ leader: id });
-                if (teams && teams.length > 0) {
-                    for (const team of teams) {
-                        // Unassign all employers from this team (as they were under this leader)
-                        await userService.UserModel.updateMany({ team: team._id }, { team: null });
-                        // Clear the leader from the team
-                        await teamService.updateTeam(team._id, { leader: null });
-                    }
+                for (const team of (teams || [])) {
+                    await userService.removeTeamFromAllUsers(team._id);
+                    await teamService.updateTeam(team._id, { leader: null });
                 }
             }
 
-            // --- FILE CLEANUP START ---
             await fileService.deleteUserFiles(user, problemService);
-            // --- FILE CLEANUP END ---
-
-            // --- INVITATION CLEANUP START ---
             await InvitationModel.deleteMany({ email: user.email });
-            // --- INVITATION CLEANUP END ---
 
             const result = await userService.deleteUser(id);
             if (!result) return next(ErrorHandler.serverError('Failed to delete user'));
@@ -696,22 +538,14 @@ class UserController {
         }
     }
 
-    // Get attendance summary for a user
     getAttendanceSummary = async (req, res, next) => {
         try {
             const { userId } = req.params;
             const { startDate, endDate } = req.query;
 
-            const attendanceSummaryService = require('../services/attendance-summary-service');
-
             const targetUserId = userId || req.user?._id;
-            if (!targetUserId) {
-                return next(ErrorHandler.unAuthorized('Unauthorized Access'));
-            }
-
-            if (userId && !mongoose.Types.ObjectId.isValid(userId)) {
-                return next(ErrorHandler.badRequest('Invalid User Id'));
-            }
+            if (!targetUserId) return next(ErrorHandler.unauthorized('Unauthorized Access'));
+            if (userId && !mongoose.Types.ObjectId.isValid(userId)) return next(ErrorHandler.badRequest('Invalid User Id'));
 
             const dateRange = {};
             if (startDate) dateRange.startDate = new Date(startDate);
@@ -724,44 +558,30 @@ class UserController {
 
             res.json({ success: true, data: summary });
         } catch (error) {
-            console.error('Error getting attendance summary:', error);
             next(error);
         }
     }
 
-    // Edit attendance record (Admin only)
     editAttendance = async (req, res, next) => {
         try {
             const { id } = req.params;
-            const updateData = req.body;
+            if (!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid attendance ID'));
 
-            if (!mongoose.Types.ObjectId.isValid(id)) {
-                return next(ErrorHandler.badRequest('Invalid attendance ID'));
-            }
-
-            const updated = await attendanceService.updateAttendance(id, updateData);
+            const updated = await attendanceService.updateAttendance(id, req.body);
             if (!updated) return next(ErrorHandler.notFound('Attendance record not found'));
 
             res.json({ success: true, message: 'Attendance updated successfully', data: updated });
         } catch (error) {
-            console.error('Error editing attendance:', error);
             next(error);
         }
     }
 
-    // Recalculate salary based on attendance (Admin only)
     recalculateSalary = async (req, res, next) => {
         try {
             const { userId } = req.params;
             const { month, year, baseSalary } = req.body;
+            if (!mongoose.Types.ObjectId.isValid(userId)) return next(ErrorHandler.badRequest('Invalid user ID'));
 
-            if (!mongoose.Types.ObjectId.isValid(userId)) {
-                return next(ErrorHandler.badRequest('Invalid user ID'));
-            }
-
-            const attendanceSummaryService = require('../services/attendance-summary-service');
-
-            // Get attendance summary for the month
             const firstDay = new Date(year, month - 1, 1);
             const lastDay = new Date(year, month, 0);
 
@@ -770,41 +590,23 @@ class UserController {
                 endDate: lastDay
             });
 
-            // Calculate salary based on attendance
-            // Formula: (presentDays / totalDays) * baseSalary
             const attendanceRatio = summary.totalDays > 0 ? summary.presentDays / summary.totalDays : 0;
             const calculatedSalary = Math.round(baseSalary * attendanceRatio);
+            const assignedDate = new Date().toISOString().split('T')[0];
 
-            // Update or create salary record
             const existingSalary = await userService.findSalary({ employeeID: userId, month, year });
-
             if (existingSalary) {
-                await userService.updateSalary({ employeeID: userId, month, year }, {
-                    salary: calculatedSalary,
-                    assignedDate: new Date().toISOString().split('T')[0]
-                });
+                await userService.updateSalary({ employeeID: userId, month, year }, { salary: calculatedSalary, assignedDate });
             } else {
-                await userService.assignSalary({
-                    employeeID: userId,
-                    salary: calculatedSalary,
-                    month,
-                    year,
-                    assignedDate: new Date().toISOString().split('T')[0]
-                });
+                await userService.assignSalary({ employeeID: userId, salary: calculatedSalary, month, year, assignedDate });
             }
 
             res.json({
                 success: true,
                 message: 'Salary recalculated successfully',
-                data: {
-                    summary,
-                    calculatedSalary,
-                    baseSalary,
-                    attendanceRatio: (attendanceRatio * 100).toFixed(2) + '%'
-                }
+                data: { summary, calculatedSalary, baseSalary, attendanceRatio: (attendanceRatio * 100).toFixed(2) + '%' }
             });
         } catch (error) {
-            console.error('Error recalculating salary:', error);
             next(error);
         }
     }
@@ -824,8 +626,8 @@ class UserController {
                 ]
             });
 
-            const usersDto = users ? users.map(user => new UserDto(user)) : [];
-            res.json({ success: true, data: usersDto });
+            const data = users ? users.map(u => new UserDto(u)) : [];
+            res.json({ success: true, data });
         } catch (error) {
             next(error);
         }
@@ -836,96 +638,63 @@ class UserController {
             const { id } = req.params;
             let { progress, progressNote } = req.body;
 
-            if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-                return next(ErrorHandler.badRequest('Invalid User ID'));
-            }
-
-            if (progress === undefined || progress === null) {
-                return next(ErrorHandler.badRequest('Progress value is required'));
-            }
+            if (!id || !mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User ID'));
+            if (progress === undefined || progress === null) return next(ErrorHandler.badRequest('Progress value is required'));
 
             progress = Number(progress);
             if (Number.isNaN(progress) || progress < 0 || progress > 100) {
                 return next(ErrorHandler.badRequest('Progress must be between 0 and 100'));
             }
 
-            // Update User Model (Current state)
-            const user = await userService.UserModel.findByIdAndUpdate(
-                id,
-                { $set: { progress, progressNote: progressNote || '' } },
-                { new: true }
-            );
-
+            const user = await userService.updateUser(id, { progress, progressNote: progressNote || '' });
             if (!user) return next(ErrorHandler.notFound('User not found'));
 
-            // Update Progress Model (Historical tracking)
-            const progressService = require('../services/progress-service');
             await progressService.upsertForUser(id, progress, progressNote);
 
-            // Emit Real-time Notification
-            const socketService = require('../services/socket-service');
             socketService.emitToAll('progress-update', {
-                userId: id,
-                progress,
-                progressNote: progressNote || '',
-                updatedAt: new Date()
+                userId: id, progress, progressNote: progressNote || '', updatedAt: new Date()
             });
 
             res.json({ success: true, message: 'User progress updated', data: user });
         } catch (error) {
-            next(ErrorHandler.serverError(error.message));
+            next(error);
         }
     }
 
     getLeaderboardData = async (req, res, next) => {
         try {
             const { type: role, _id: userId, team: userTeamId } = req.user;
-            const { mode } = req.query; // 'users' or 'teams'
+            const { mode, type: filterType } = req.query;
             let data = [];
 
             if (mode === 'teams') {
-                // Return all teams for everyone to see ranking
                 data = await teamService.findTeams({});
+            } else if (filterType) {
+                data = await userService.findUsers({ type: filterType });
+            } else if (['super_admin', 'sub_admin'].includes(role.toLowerCase())) {
+                const [employees, leaders] = await Promise.all([
+                    userService.findUsers({ type: 'employee' }),
+                    userService.findUsers({ type: 'leader' })
+                ]);
+                data = [...employees, ...leaders];
+            } else if (role.toLowerCase() === 'leader') {
+                const myTeams = await teamService.findTeams({ leader: userId });
+                const myTeamIds = myTeams.map(t => t._id);
+                const [members, leaders] = await Promise.all([
+                    userService.findUsers({ team: { $in: myTeamIds }, type: 'employee' }),
+                    userService.findUsers({ type: 'leader' })
+                ]);
+                const uniqueUsers = new Map();
+                [...members, ...leaders].forEach(u => uniqueUsers.set(u._id.toString(), u));
+                data = Array.from(uniqueUsers.values());
+            } else if (userTeamId) {
+                data = await userService.findUsers({ team: userTeamId });
             } else {
-                // Mode: users
-                const filterType = req.query.type;
-                if (filterType) {
-                    // If a specific type is requested (leaderboard view), allow everyone to see it
-                    data = await userService.findUsers({ type: filterType });
-                } else if (['super_admin', 'sub_admin'].includes(role.toLowerCase())) {
-                    // Default admin view: all employees and leaders
-                    const employees = await userService.findUsers({ type: 'employee' });
-                    const leaders = await userService.findUsers({ type: 'leader' });
-                    data = [...employees, ...leaders];
-                } else if (role.toLowerCase() === 'leader') {
-                    // Default leader view: their members + all leaders
-                    const myTeams = await teamService.findTeams({ leader: userId });
-                    const myTeamIds = myTeams.map(t => t._id);
-                    const members = await userService.findUsers({ team: { $in: myTeamIds }, type: 'employee' });
-                    const leaders = await userService.findUsers({ type: 'leader' });
-
-                    const uniqueUsers = new Map();
-                    [...members, ...leaders].forEach(u => uniqueUsers.set(u._id.toString(), u));
-                    data = Array.from(uniqueUsers.values());
-                } else {
-                    // Default employee view: team members
-                    if (userTeamId) {
-                        data = await userService.findUsers({ team: userTeamId });
-                    } else {
-                        data = [req.user];
-                    }
-                }
+                data = [req.user];
             }
 
-            const dataDto = data.map(item => {
-                if (mode === 'teams') {
-                    const TeamDto = require('../dtos/team-dto');
-                    return new TeamDto(item);
-                }
-                return new UserDto(item);
-            });
-
-            res.json({ success: true, data: dataDto });
+            const Dto = mode === 'teams' ? TeamDto : UserDto;
+            res.json({ success: true, data: data.map(item => new Dto(item)) });
         } catch (error) {
             next(error);
         }
@@ -938,10 +707,8 @@ class UserController {
                 status: { $in: ['active', 'deactive'] }
             };
 
-            // If requester is a leader, only show members of their team
-            if (req.user && req.user.type === 'leader') {
-                const Team = require('../models/team-model');
-                const teams = await Team.find({ leader: req.user._id });
+            if (req.user?.type === 'leader') {
+                const teams = await TeamModel.find({ leader: req.user._id });
                 const teamIds = teams.map(t => t._id);
                 query = {
                     team: { $in: teamIds },
@@ -950,7 +717,7 @@ class UserController {
                 };
             }
 
-            const users = await userService.UserModel.find(query).select('name type email');
+            const users = await userService.searchUsers(query, 'name type email');
             res.json(users);
         } catch (error) {
             next(error);

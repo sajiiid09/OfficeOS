@@ -21,8 +21,6 @@ import Team from './pages/team/team/Team';
 import EditUser from './pages/user/EditUser';
 import EditTeam from './pages/team/EditTeam';
 import Admin from './pages/admin/Admin';
-import './assets/css/style.css';
-import './assets/css/components.css';
 import './App.css';
 import Leaders from './pages/leader/Leaders';
 import MainLayout from './navigation/MainLayout';

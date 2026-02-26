@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { viewEmployeeAttendance } from '../../http';
 import socket from '../../socket';
@@ -47,7 +47,6 @@ const LocationTracker = () => {
                 return;
             }
 
-            console.log('Starting location tracking...');
             setIsTracking(true);
 
             watchId = navigator.geolocation.watchPosition(
@@ -77,7 +76,6 @@ const LocationTracker = () => {
                 watchId = null;
             }
             if (isTracking) {
-                console.log('Stopped location tracking.');
                 setIsTracking(false);
             }
         };
@@ -87,7 +85,6 @@ const LocationTracker = () => {
 
         // Listen for custom event to re-check immediately
         const handleAttendanceUpdate = () => {
-            console.log('Attendance update event received, re-checking status...');
             checkStatusAndTrack();
         };
 

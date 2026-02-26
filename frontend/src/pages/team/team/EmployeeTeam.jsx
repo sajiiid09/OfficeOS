@@ -117,7 +117,7 @@ const EmployeeTeam = () => {
                             </button>
                             :
                             <button onClick={modalLeadersAction} className='badge badge-light btn' style={{padding:'0px 10px 0px 0px'}}>
-                                <img src='../assets/icons/user.png' className='avatar avatar-sm mr-2' alt="Person"/>
+                                <img src='/assets/icons/user.png' className='avatar avatar-sm mr-2' alt="Person"/>
                                 No Leader
                             </button> 
                             }

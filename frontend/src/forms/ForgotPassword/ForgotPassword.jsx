@@ -3,7 +3,6 @@ import {useSelector,useDispatch} from 'react-redux';
 import { setEmail } from "../../store/auth-slice";
 import { forgotPassword } from "../../http";
 import { toast } from "react-toastify";
-import logo from "../../assets/icons/new-logo.png";
 
 const ForgotPassword = ({onNext}) =>
 {
@@ -25,7 +24,6 @@ const ForgotPassword = ({onNext}) =>
             else
                 toast.error(res.message);
         } catch (error) {
-            console.warn(error);
             toast.error(error.response?.data?.message || error.message || "An error occurred");
         }
         
@@ -37,7 +35,7 @@ const ForgotPassword = ({onNext}) =>
                 <div className="row">
                 <div className="col-12 col-sm-8 offset-sm-2 col-md-6 offset-md-3 col-lg-6 offset-lg-3 col-xl-4 offset-xl-4">
                 <div className="login-brand">
-                  <img src={logo} alt="RACO EMS Logo" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
+                  <img src="/assets/icons/new-logo.png" alt="RACO EMS Logo" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
                 </div>
 
                     <div className="card card-primary">

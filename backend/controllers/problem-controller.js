@@ -2,60 +2,37 @@ const problemService = require('../services/problem-service');
 const ErrorHandler = require('../utils/error-handler');
 const mongoose = require('mongoose');
 const fileService = require('../services/file-service');
+const notificationService = require('../services/notification-service');
 
 class ProblemController {
   submitProblem = async (req, res, next) => {
-    const { project, problemLocation, description, priority, empireId } = req.body;
-    const file = req.file;
-    if (!project || !problemLocation || !description) {
-      return next(ErrorHandler.badRequest('Required fields are missing'));
+    try {
+      const { project, problemLocation, description, priority, empireId } = req.body;
+      const file = req.file;
+      if (!project || !problemLocation || !description) {
+        return next(ErrorHandler.badRequest('Required fields are missing'));
+      }
+
+      const problem = await problemService.createProblem({
+        user: req.user._id,
+        project, problemLocation, description,
+        priority: priority || 'Low',
+        image: file ? file.path : undefined,
+        empire: empireId
+      });
+      if (!problem) return next(ErrorHandler.serverError('Failed to submit problem'));
+
+      await notificationService.notifyAdmins({
+        title: 'New Mission Report',
+        message: `${req.user.name} submitted a new report: ${project}`,
+        type: 'problem',
+        link: '/admin/problems'
+      });
+
+      res.json({ success: true, message: 'Problem submitted successfully', data: problem });
+    } catch (error) {
+      next(error);
     }
-
-    const problemData = {
-      user: req.user._id,
-      project,
-      problemLocation,
-      description,
-      priority: priority || 'Low',
-      image: file ? file.path : undefined,
-      empire: empireId
-    };
-
-    const problem = await problemService.createProblem(problemData);
-    if (!problem) {
-      return next(ErrorHandler.serverError('Failed to submit problem'));
-    }
-
-    // Notify Admins
-    const User = require('../models/user-model');
-    const Notification = require('../models/notification-model');
-    const admins = await User.find({ type: 'Admin' });
-
-    // Create notification for each admin
-    const notifications = admins.map(admin => ({
-      title: 'New Mission Report',
-      message: `${req.user.name} submitted a new report: ${project}`,
-      type: 'problem',
-      link: '/admin/problems',
-      user: admin._id
-    }));
-
-    await Notification.insertMany(notifications);
-
-    // Emit Real-time Notification to Admins
-    const socketService = require('../services/socket-service');
-    socketService.emitToAdmins('notification', {
-      title: 'New Mission Report',
-      message: `${req.user.name} submitted a new report: ${project}`,
-      type: 'problem',
-      link: '/admin/problems'
-    });
-
-    res.json({
-      success: true,
-      message: 'Problem submitted successfully',
-      data: problem
-    });
   }
 
   getUserProblems = async (req, res, next) => {
@@ -76,24 +53,17 @@ class ProblemController {
 
   getScopedProblems = async (req, res, next) => {
     try {
-      // Find all team members first
-      const team = await mongoose.model('Team').findOne({ leader: req.user._id });
-      if (!team) {
-        return res.json({
-          success: true,
-          message: 'No team assigned',
-          data: []
-        });
-      }
+      const Team = mongoose.model('Team');
+      const User = mongoose.model('User');
 
-      const members = await mongoose.model('User').find({ team: team._id });
+      const team = await Team.findOne({ leader: req.user._id });
+      if (!team) return res.json({ success: true, message: 'No team assigned', data: [] });
+
+      const members = await User.find({ team: team._id });
       const memberIds = members.map(m => m._id);
 
       const problems = await problemService.findProblems({ user: { $in: memberIds } });
-      res.json({
-        success: true,
-        data: problems
-      });
+      res.json({ success: true, data: problems });
     } catch (error) {
       next(error);
     }

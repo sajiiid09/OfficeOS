@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
 import { useParams, useHistory } from "react-router";
 import { toast } from "react-toastify";
-import HeaderSection from "../../components/HeaderSection";
-import { updateUser, getUser, backendUrl, getEmpires } from "../../http";
+import { updateUser, getUser, getEmpires } from "../../http";
 import { getFileUrl } from "../../utils/fileUtil";
 import Modal from '../../components/modal/Modal';
 
@@ -135,11 +134,6 @@ const EditUser = () => {
 
     const onSubmit = async (e) => {
         e.preventDefault();
-        console.log('=== UPDATE USER SUBMIT ===');
-        console.log('Original type:', originalFormData.type);
-        console.log('Current type in form:', formData.type);
-        console.log('Type in updateFormData:', updateFormData.type);
-        console.log('Full updateFormData:', updateFormData);
 
         if (updateFormData.type && !showModal) return setShowModal(true);
         if (!Object.keys(updateFormData).length) {
@@ -152,9 +146,6 @@ const EditUser = () => {
             return fd.append(key, updateFormData[key]);
         })
 
-        console.log('FormData keys:', Array.from(fd.keys()));
-        console.log('FormData type value:', fd.get('type'));
-
         let success = false;
         let message = '';
         try {
@@ -165,12 +156,10 @@ const EditUser = () => {
             toast.error(error?.response?.data?.message || 'Failed to update user');
             return;
         }
-        console.log("Update User:", message)
 
         if (success) {
             toast.success(message);
             setShowModal(false); // Close modal if open
-            console.log('✅ Type change persisted to MongoDB, redirecting...');
 
             // Redirect to employees list - role pages will fetch fresh data on mount
             setTimeout(() => {

@@ -1,19 +1,26 @@
-import SideBar from './sidebar.jsx';
-import Navigation from './navigation.jsx';
-import { ThemeProvider } from '../store/ThemeContext.js';
+/**
+ * MainLayout — Authenticated page wrapper.
+ * Composes the sidebar + top navigation around page content.
+ * ThemeProvider scoped here so only authenticated pages get theming.
+ */
 
-const MainLayout = ({ children }) => {
-  return (
-    <ThemeProvider>
-      <div id="app">
-        <div className="main-wrapper">
-          <Navigation />
-          <SideBar />
+import React from 'react';
+import SideBar from './sidebar';
+import Navigation from './navigation';
+import { ThemeProvider } from '../store/ThemeContext';
+
+const MainLayout = ({ children }) => (
+  <ThemeProvider>
+    <div id="app">
+      <div className="main-wrapper">
+        <Navigation />
+        <SideBar />
+        <main id="main-content" role="main">
           {children}
-        </div>
+        </main>
       </div>
-    </ThemeProvider>
-  );
-};
+    </div>
+  </ThemeProvider>
+);
 
 export default MainLayout;

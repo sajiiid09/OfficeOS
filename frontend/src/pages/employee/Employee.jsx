@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, NavLink } from "react-router-dom";
-import { getUser, updateUser, backendUrl } from "../../http";
+import { getUser, updateUser } from "../../http";
 import { getFileUrl } from "../../utils/fileUtil";
 import CircularProgress from "../../components/CircularProgress";
 import { useSelector } from "react-redux";
@@ -26,16 +26,13 @@ const Employee = () =>
     useEffect(()=>{
         (async ()=>{
             const res = await getUser(id);
-            console.log("Employee detail response:", res);
             if(res.success) {
-                console.log("Employee data received:", res.data);
                 setUser(res.data);
                 setProgressData({
                     progress: res.data.progress || 0,
                     progressNote: res.data.progressNote || ''
                 });
             } else {
-                console.log("Failed to fetch employee:", res.message);
             }
         })();
     },[id])

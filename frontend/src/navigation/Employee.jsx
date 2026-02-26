@@ -1,67 +1,49 @@
-import { NavLink } from "react-router-dom";
-import { dLogout } from "../http";
-import { setAuth } from "../store/auth-slice";
-import { useDispatch, useSelector } from "react-redux"; // Added useSelector
-import { useHistory } from "react-router-dom";
-import swal from 'sweetalert';
+/**
+ * EmployeeMenu — Sidebar navigation for employee users.
+ * Pure presentational. Logout logic delegated to useLogout hook.
+ */
 
+import React from 'react';
+import { NavLink } from 'react-router-dom';
+import { useLogout } from '../hooks/useLogout';
 
+/** @type {Array<{ to: string, icon: string, label: string }>} */
+const LINKS = [
+  { to: '/dashboardEmployee', icon: 'fas fa-fire', label: 'Dashboard' },
+  { to: '/userTeams', icon: 'fas fa-users', label: 'Team' },
+  { to: '/userAttendance', icon: 'fas fa-user', label: 'Attendance' },
+  { to: '/applyforleave', icon: 'fas fa-pen', label: 'Apply for Leave' },
+  { to: '/userLeaveApplications', icon: 'fas fa-book', label: 'Leave Applications' },
+  { to: '/userSalary', icon: 'fas fa-piggy-bank', label: 'Salary' },
+  { to: '/userproblem', icon: 'fas fa-exclamation-circle', label: 'Report Problem' },
+  { to: '/chat', icon: 'fas fa-comments', label: 'Chat Room' },
+];
 
+const EmployeeMenu = () => {
+  const logout = useLogout();
 
-const Employee = () =>
-{
+  return (
+    <ul className="sidebar-menu overflow-auto">
+      {LINKS.map(({ to, icon, label }) => (
+        <li key={to}>
+          <NavLink className="nav-link" to={to}>
+            <i className={icon} aria-hidden="true" /> <span>{label}</span>
+          </NavLink>
+        </li>
+      ))}
 
-  const dispatch = useDispatch();
-  const { user } = useSelector(state => state.authSlice); // Get user from state
-  const history = useHistory();
+      <li>
+        <button
+          type="button"
+          className="nav-link"
+          onClick={logout}
+          style={{ background: 'none', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+        >
+          <i className="fas fa-sign-out-alt" aria-hidden="true" /> <span>Logout</span>
+        </button>
+      </li>
+    </ul>
+  );
+};
 
-  const logout = async (e) => {
-    if (e) e.preventDefault();
-    
-    const willLogout = await swal({
-        title: "Are you sure?",
-        text: "Do you want to logout?",
-        icon: "warning",
-        buttons: ["Cancel", "Yes, Logout"],
-        dangerMode: true,
-    });
-    
-    if (!willLogout) {
-        return;
-    }
-    
-    try {
-        await dLogout();
-        dispatch(setAuth(null));
-        history.push('/login');
-    } catch (err) {
-        console.error("Logout failed", err);
-        dispatch(setAuth(null));
-        history.push('/login');
-    }
-  }
-    return(
-      <ul className="sidebar-menu overflow-auto">
-        <li><NavLink className="nav-link" to="/dashboardEmployee"><i className="fas fa-fire"></i> <span>Dashboard</span></NavLink></li>
-        <li><NavLink className="nav-link" to="/userTeams"><i className="fas fa-users"></i> <span>Team</span></NavLink></li>
-        <li><NavLink className="nav-link" to="/userAttendance"><i className="fas fa-user"></i> <span>Attendance</span></NavLink></li>
-        <li><NavLink className="nav-link" to="/applyforleave"><i className="fas fa-pen"></i> <span>Apply For Leave</span></NavLink></li>
-        <li><NavLink className="nav-link" to="/userLeaveApplications"><i className="fas fa-book"></i> <span>Leave Applications</span></NavLink></li>
-        <li>
-          <NavLink className="nav-link" to="/userSalary"><i className="fas fa-piggy-bank"></i> <span>Salary</span></NavLink>
-          </li>
-
-          <li>
-            <NavLink className="nav-link" to="/userproblem"><i className="fas fa-exclamation-circle"></i> <span>Report Problem</span></NavLink>
-          </li>
-          <li>
-            <NavLink className="nav-link" to="/chat"><i className="fas fa-comments"></i> <span>Chat Room</span></NavLink>
-          </li>
-        
-     
-        <li><NavLink onClick={logout} className="nav-link" to="#"><i className="fas fa-sign-out-alt"></i> <span>Logout</span></NavLink></li>
-      </ul>
-    )
-}
-
-export default Employee;
+export default EmployeeMenu;

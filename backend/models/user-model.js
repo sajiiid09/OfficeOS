@@ -133,39 +133,29 @@ const userSchema = new Schema({
     timestamps: true
 });
 
-// const SALT_FACTOR = process.env.BCRYPT_PASSWORD_SALT_FACTOR || 10;
-const SALT_FACTOR = 10
-
+const SALT_FACTOR = Number(process.env.BCRYPT_PASSWORD_SALT_FACTOR) || 10;
 
 userSchema.pre('save', async function (next) {
-    const user = this;
-    if (!user.isModified('password'))
-        return next();
-
+    if (!this.isModified('password')) return next();
     try {
         const salt = await bcrypt.genSalt(SALT_FACTOR);
-        user.password = await bcrypt.hash(user.password, salt);
-        return next();
+        this.password = await bcrypt.hash(this.password, salt);
+        next();
     } catch (err) {
-        console.log('Password hashing error:', err);
-        return next(err);
+        next(err);
     }
 });
 
-
-userSchema.pre('updateOne', function (done) {
-    const user = this.getUpdate();
-    if (!user.password)
-        return done();
-    bcrypt.genSalt(SALT_FACTOR, (err, salt) => {
-        if (err)
-            return done(err);
-        bcrypt.hash(user.password, salt, (err, hashedPassword) => {
-            if (err) return done(err);
-            user.password = hashedPassword;
-            return done();
-        });
-    });
+userSchema.pre('updateOne', async function (next) {
+    const update = this.getUpdate();
+    if (!update.password) return next();
+    try {
+        const salt = await bcrypt.genSalt(SALT_FACTOR);
+        update.password = await bcrypt.hash(update.password, salt);
+        next();
+    } catch (err) {
+        next(err);
+    }
 });
 
 module.exports = mongoose.model('User', userSchema, 'users');

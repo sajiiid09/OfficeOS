@@ -44,11 +44,7 @@ export const useAutoLogin = () => {
                 // We do NOT retry or redirect here. We just finish loading.
                 // This prevents infinite loops on the login page.
 
-                // Only log if it's not a 401 (which is expected when not logged in)
-                if (err.response?.status !== 401) {
-                    console.log("Auto-login attempt failed:", err.message);
-                }
-                // 401 errors are normal when not logged in - no need to log or throw
+                // Auto-login failure (401 is expected when not logged in)
             } finally {
                 setLoading(false);
             }

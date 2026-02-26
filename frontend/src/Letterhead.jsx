@@ -1,5 +1,4 @@
 import React from 'react';
-import logo from './assets/icons/new-logo.png';
 const Letterhead = ({ children }) => {
   // Configurable Data
   const companyUrl = "https://easyemployee.io";
@@ -318,7 +317,7 @@ const Letterhead = ({ children }) => {
               {/* Refined Company Logo */}
               <div style={styles.logoIcon}>
                 <span style={{ marginTop: '-4px' }}>
-                  <img src={logo} alt="Logo" style={{ width: '50px', height: '50px' ,objectFit: 'contain',objectPosition: 'center',borderRadius: 0}} />
+                  <img src="/assets/icons/new-logo.png" alt="Logo" style={{ width: '50px', height: '50px' ,objectFit: 'contain',objectPosition: 'center',borderRadius: 0}} />
                 </span>
               </div>
               <div>

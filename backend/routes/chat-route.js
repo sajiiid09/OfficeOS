@@ -2,7 +2,7 @@ const router = require('express').Router();
 const chatController = require('../controllers/chat-controller');
 const asyncMiddleware = require('../middlewares/async-middleware');
 const { auth } = require('../middlewares/auth-middleware');
-const upload = require('../middlewares/multer-cloudinary-config');
+const upload = require('../middlewares/multer-config');
 
 router.post('/send', auth, upload.single('chatFile'), asyncMiddleware(chatController.sendMessage));
 router.get('/messages/:userId', auth, asyncMiddleware(chatController.getMessages));

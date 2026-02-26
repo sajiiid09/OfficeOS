@@ -1,102 +1,67 @@
 let io;
-const users = new Map(); // Store userId -> Set of socketIds mapping
+const connectedUsers = new Map();
 
 const init = (socketIo) => {
-  io = socketIo;
+    const UserModel = require('../models/user-model');
+    io = socketIo;
 
-  io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    io.on('connection', (socket) => {
+        socket.on('join', async (userId) => {
+            if (!userId) return;
 
-    socket.on('join', async (userId) => {
-      if (userId) {
-        const uid = userId.toString();
-        const User = require('../models/user-model');
-
-        if (!users.has(uid)) {
-          users.set(uid, new Set());
-          // Mark as active on first connection
-          try {
-            await User.findByIdAndUpdate(uid, { isOnline: true });
-            console.log(`User ${uid} marked as ONLINE`);
-            // Broadcast to all that this user is online
-            emitToAll('user-status-update', { userId: uid, isOnline: true });
-          } catch (err) {
-            console.error(`Failed to update online status for user ${uid}:`, err);
-          }
-        }
-        users.get(uid).add(socket.id);
-        console.log(`User ${uid} joined with socket ${socket.id}. Total sockets for user: ${users.get(uid).size}`);
-      } else {
-        console.log('Join attempt with no userId');
-      }
-    });
-
-    socket.on('share-location', (data) => {
-      // data: { userId, lat, long }
-      // console.log(`Location update from user ${data.userId}: ${data.lat}, ${data.long}`);
-      // Broadcast to all admins
-      emitToAdmins('user-location-update', data);
-    });
-
-    socket.on('disconnect', async () => {
-      console.log('User disconnected:', socket.id);
-      for (const [userId, socketIds] of users.entries()) {
-        if (socketIds.has(socket.id)) {
-          socketIds.delete(socket.id);
-          console.log(`Socket ${socket.id} removed for user ${userId}`);
-
-          if (socketIds.size === 0) {
-            const User = require('../models/user-model');
-            try {
-              await User.findByIdAndUpdate(userId, { isOnline: false });
-              console.log(`User ${userId} marked as OFFLINE`);
-              // Broadcast to all that this user is offline
-              emitToAll('user-status-update', { userId, isOnline: false });
-            } catch (err) {
-              console.error(`Failed to update online status for user ${userId}:`, err);
+            const uid = userId.toString();
+            if (!connectedUsers.has(uid)) {
+                connectedUsers.set(uid, new Set());
+                try {
+                    await UserModel.findByIdAndUpdate(uid, { isOnline: true });
+                    emitToAll('user-status-update', { userId: uid, isOnline: true });
+                } catch (err) {
+                    console.error(`Failed to update online status for ${uid}:`, err.message);
+                }
             }
-            users.delete(userId);
-            console.log(`User ${userId} mapping removed (no more sockets)`);
-          }
-          break;
-        }
-      }
+            connectedUsers.get(uid).add(socket.id);
+        });
+
+        socket.on('share-location', (data) => {
+            emitToAdmins('user-location-update', data);
+        });
+
+        socket.on('disconnect', async () => {
+            for (const [userId, socketIds] of connectedUsers.entries()) {
+                if (!socketIds.has(socket.id)) continue;
+
+                socketIds.delete(socket.id);
+                if (socketIds.size === 0) {
+                    try {
+                        await UserModel.findByIdAndUpdate(userId, { isOnline: false });
+                        emitToAll('user-status-update', { userId, isOnline: false });
+                    } catch (err) {
+                        console.error(`Failed to update offline status for ${userId}:`, err.message);
+                    }
+                    connectedUsers.delete(userId);
+                }
+                break;
+            }
+        });
     });
-  });
 };
 
 const emitToUser = (userId, event, data) => {
-  if (!io) return;
-  const uid = userId.toString();
-  const socketIds = users.get(uid);
-  if (socketIds && socketIds.size > 0) {
-    console.log(`Emitting ${event} to user ${uid} (${socketIds.size} sockets)`);
-    socketIds.forEach(socketId => {
-      io.to(socketId).emit(event, data);
-    });
-  } else {
-    console.log(`Failed to emit ${event} to user ${uid} - User not connected`);
-  }
+    if (!io) return;
+    const socketIds = connectedUsers.get(userId.toString());
+    if (!socketIds || socketIds.size === 0) return;
+    socketIds.forEach(socketId => io.to(socketId).emit(event, data));
 };
 
 const emitToAll = (event, data) => {
-  if (io) {
-    io.emit(event, data);
-  }
+    if (io) io.emit(event, data);
 };
 
 const emitToAdmins = async (event, data) => {
-  if (!io) return;
-  const User = require('../models/user-model');
-  const admins = await User.find({ type: 'Admin' });
-  admins.forEach(admin => {
-    emitToUser(admin._id, event, data);
-  });
+    if (!io) return;
+    const UserModel = require('../models/user-model');
+    const admins = await UserModel.find({ type: { $in: ['super_admin', 'sub_admin'] } });
+    admins.forEach(admin => emitToUser(admin._id, event, data));
 };
 
-module.exports = {
-  init,
-  emitToUser,
-  emitToAll,
-  emitToAdmins
-};
+module.exports = { init, emitToUser, emitToAll, emitToAdmins };

@@ -1,31 +1,32 @@
 const tokenService = require('../services/token-service');
 const ErrorHandler = require('../utils/error-handler');
 
+const extractAccessToken = (req) => {
+    const cookieToken = req.cookies?.accessToken;
+    const header = req.headers?.authorization;
+    const headerToken = header?.startsWith('Bearer ') ? header.split(' ')[1] : null;
+    return cookieToken || headerToken;
+};
+
 const auth = async (req, res, next) => {
     try {
-        console.log(`>>> [AuthMiddleware] Authenticating request for ${req.url}`);
-            // Accept token from cookie OR Authorization header (Bearer)
-            const cookieToken = req.cookies && req.cookies.accessToken;
-            const header = req.headers && req.headers.authorization;
-            const headerToken = header && header.startsWith('Bearer ') ? header.split(' ')[1] : null;
-            const accessToken = cookieToken || headerToken;
+        const accessToken = extractAccessToken(req);
+        if (!accessToken) return next(ErrorHandler.unauthorized());
 
-            if (!accessToken) return next(ErrorHandler.unAuthorized());
-
-            const userData = await tokenService.verifyAccessToken(accessToken);
-        if (!userData) return next(ErrorHandler.unAuthorized());
+        const userData = await tokenService.verifyAccessToken(accessToken);
+        if (!userData) return next(ErrorHandler.unauthorized());
 
         req.user = userData;
         next();
     } catch (err) {
-        return next(ErrorHandler.unAuthorized());
+        return next(ErrorHandler.unauthorized());
     }
 };
 
-const authRole = (roles) => (req, res, next) => {
+const authRole = (allowedRoles) => (req, res, next) => {
     const userType = req.user?.type?.toLowerCase();
-    if (!roles.map(r => r.toLowerCase()).includes(userType))
-        return next(ErrorHandler.notAllowed());
+    const normalizedRoles = allowedRoles.map(role => role.toLowerCase());
+    if (!normalizedRoles.includes(userType)) return next(ErrorHandler.forbidden());
     next();
 };
 

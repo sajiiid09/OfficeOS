@@ -1,16 +1,17 @@
-const { createSlice } = require("@reduxjs/toolkit")
+import { createSlice } from '@reduxjs/toolkit';
 
+/** @type {{ team: { leader: object|null, information: { employee: number } } }} */
 const initialState = {
-    team:{
-        leader:null,
-        information:{
-            employee:0
-        }
-    }
-}
+  team: {
+    leader: null,
+    information: {
+      employee: 0,
+    },
+  },
+};
 
 export const teamSlice = createSlice({
-    name:'teamSice',
+    name:'teamSlice',
     initialState,
     reducers:{
         setTeam:(state,action) =>
@@ -33,8 +34,7 @@ export const teamSlice = createSlice({
             {
                 state.team.information.employee = state.team.information.employee-1;
             }
-            else
-                console.log('No Matching Action Found');
+
         }
     }
 })

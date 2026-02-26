@@ -1,39 +1,62 @@
-import { useSelector } from "react-redux";
-import { NavLink } from "react-router-dom"
-import Admin from './Admin';
-import Leader from './Leader';
-import Employee from './Employee';
-import logo from "../assets/icons/new-logo.png";
+/**
+ * SideBar — Role-based sidebar navigation.
+ * Renders the correct menu based on user type.
+ * Pure presentational — no business logic.
+ */
+
+import React from 'react';
+import { useSelector } from 'react-redux';
+import { NavLink } from 'react-router-dom';
+import AdminMenu from './Admin';
+import LeaderMenu from './Leader';
+import EmployeeMenu from './Employee';
 
 const SideBar = () => {
+  const { user } = useSelector((state) => state.authSlice);
 
-  const { user } = useSelector(state => state.authSlice);
+  const renderMenu = () => {
+    if (['super_admin', 'sub_admin'].includes(user?.type)) return <AdminMenu />;
+    if (user?.type === 'leader') return <LeaderMenu />;
+    return <EmployeeMenu />;
+  };
 
   return (
-    <div className="main-sidebar">
+    <nav className="main-sidebar" aria-label="Sidebar Navigation">
       <aside id="sidebar-wrapper">
+        {/* Brand — full sidebar */}
         <div className="sidebar-brand">
-          <NavLink to="/home" className="d-flex align-items-center justify-content-center">
-            <img src={logo} alt="RACO EMS Logo" style={{ width: '24px', height: '24px', objectFit: 'contain', marginRight: '8px' }} />
-            <span>RACO EMS</span>
+          <NavLink
+            to="/home"
+            className="d-flex align-items-center justify-content-center"
+          >
+            {/* TODO: Replace with SVG logo component */}
+            <div
+              className="image-placeholder"
+              style={{ width: 24, height: 24, marginRight: 8, borderRadius: 4, fontSize: '0.75rem' }}
+            >
+              <i className="fas fa-building" aria-hidden="true" />
+            </div>
+            <span>OfficeOS</span>
           </NavLink>
         </div>
+
+        {/* Brand — collapsed sidebar */}
         <div className="sidebar-brand sidebar-brand-sm">
-          <NavLink to="/home">
-            <img src={logo} alt="RACO EMS Logo" style={{ width: '22px', height: '22px', objectFit: 'contain' }} />
+          <NavLink to="/home" aria-label="OfficeOS Home">
+            <div
+              className="image-placeholder"
+              style={{ width: 22, height: 22, borderRadius: 4, fontSize: '0.65rem' }}
+            >
+              <i className="fas fa-building" aria-hidden="true" />
+            </div>
           </NavLink>
         </div>
-        {
-          (['super_admin', 'sub_admin'].includes(user.type)) ? <Admin /> : (user.type === 'leader') ? <Leader /> : <Employee />
-        }
-        <div className="mt-2 mb-4 p-3 hide-sidebar-mini">
-          <a href="https://easyemployee.io/" target="_blank" rel="noopener noreferrer" className="btn btn-primary btn-lg btn-block btn-icon-split shadow-sm">
-            <i className="fas fa-id-card mr-2"></i> ID Card Website
-          </a>
-        </div>
+
+        {/* Role-based menu */}
+        {renderMenu()}
       </aside>
-    </div>
-  )
-}
+    </nav>
+  );
+};
 
 export default SideBar;
